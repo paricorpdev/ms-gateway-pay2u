@@ -1,0 +1,47 @@
+# Secrets & Environment Configurations
+config.yml
+.env
+.env.*
+!.env.example
+!config.yml.example
+
+# Binaries & Build Output
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test & Coverage Artifacts
+*.out
+*.test
+*.prof
+test_coverage.out
+test_coverage.html
+
+# Dependencies & Vendors
+vendor/
+
+# Temporary Files & Logs
+tmp/
+*.log
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE & Editor Files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~

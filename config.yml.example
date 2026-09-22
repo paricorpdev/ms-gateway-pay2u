@@ -1,0 +1,91 @@
+# Any key can be overridden by APP_<KEY> with dots replaced by underscores,
+# e.g. api_key -> APP_API_KEY.
+# File location: CONFIG_FILE (full path) or CONFIG_PATH (directory).
+
+app:
+  name: "paygate"
+  env: "development" # development | staging | production
+  timezone: "Asia/Jakarta"
+  shutdown_timeout: "15s"
+
+web:
+  host: "0.0.0.0"
+  port: 8080
+  prefork: false
+  body_limit: 8388608 # bytes
+  read_timeout: "15s"
+  write_timeout: "30s"
+  idle_timeout: "75s"
+  request_timeout: "30s"
+  enable_trusted_proxy_check: false
+  trusted_proxies: []
+
+  cors:
+    allow_origins:
+      - "http://localhost"
+      - "http://127.0.0.1"
+    allow_methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    allow_headers: ["Origin", "Content-Type", "Accept", "Content-Length", "Accept-Encoding", "Authorization", "X-Request-Id", "X-API-Key"]
+    expose_headers: ["Content-Disposition", "X-Request-Id"]
+    allow_credentials: true
+    max_age: 3600
+
+  rate_limit:
+    enabled: true
+    max: 120
+    expiration: "1m"
+
+  metrics:
+    enabled: false
+    path: "/metrics"
+
+log:
+  level: "info" # trace | debug | info | warn | error | fatal | panic
+  format: "json" # json | text
+
+database:
+  postgresql:
+    host: "localhost"
+    port: 5432
+    username: "postgres"
+    password: "password"
+    name: "paygate"
+    sslmode: "disable"
+    timezone: "Asia/Jakarta"
+    pool:
+      idle: 10
+      max: 100
+      lifetime: "5m"
+      idle_time: "5m"
+    log_level: "warn"
+    slow_threshold: "500ms"
+
+  redis:
+    host: "localhost"
+    port: 6379
+    password: ""
+    database: 0
+    tls: false
+    pool_size: 10
+
+api_key: "api-key-change-me"
+
+pay2u:
+  sandbox: true
+  base_url_sandbox: "https://api.co.id"
+  base_url_production: "https:/api.co.id"
+  oauth_url: "/security/auth/oauth/token"
+  token_url: "/service/core/trx/token/create"
+  billing_va_url: "/service/core/trx/billing/va/submit"
+  billing_qris_url: "/service/core/trx/billing/qris/submit"
+  billing_cc_url: "/service/core/trx/billing/cc/submit"
+  billing_get_url: "/service/core/trx/billing/get"
+  client_id: "client_id"
+  client_secret: "client_secret"
+  merchant_code: "merchant_code"
+  merchant_user: "merchant_user"
+  merchant_pass: "merchant_pass"
+  merchant_domain: "merchant_domain"
+  timeout: "30s"
+  oauth_token_ttl: "50m"
+  callback_base_url: "http://localhost:8080"
