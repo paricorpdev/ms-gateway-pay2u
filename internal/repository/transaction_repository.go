@@ -36,9 +36,9 @@ func (r *transactionRepository) FindByID(ctx context.Context, db *gorm.DB, id uu
 	return &tx, nil
 }
 
-func (r *transactionRepository) FindByIdempotencyKey(ctx context.Context, db *gorm.DB, key string) (*entity.Transaction, error) {
+func (r *transactionRepository) FindByRequestID(ctx context.Context, db *gorm.DB, requestID string) (*entity.Transaction, error) {
 	var tx entity.Transaction
-	if err := db.WithContext(ctx).Where("idempotency_key = ?", key).First(&tx).Error; err != nil {
+	if err := db.WithContext(ctx).Where("request_id = ?", requestID).First(&tx).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}

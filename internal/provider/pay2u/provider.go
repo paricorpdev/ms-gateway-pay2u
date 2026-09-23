@@ -23,18 +23,20 @@ func (p *Provider) Name() string {
 	return "pay2u"
 }
 
+func (p *Provider) resolveListenerURL(reqCallbackURL string) string {
+	if p.client != nil && p.client.config.CallbackBaseURL != "" {
+		return fmt.Sprintf("%s/api/v1/payments/callback/pay2u", strings.TrimRight(p.client.config.CallbackBaseURL, "/"))
+	}
+	return reqCallbackURL
+}
+
 func (p *Provider) CreateBill(ctx context.Context, req *provider.BillRequest) (*provider.BillResult, error) {
 	billingURL := p.getBillingURL(req.PaymentMethodCode)
-
-	listenerURL := req.CallbackURL
-	if listenerURL == "" && p.client.config.CallbackBaseURL != "" {
-		listenerURL = fmt.Sprintf("%s/api/v1/payments/callback/pay2u", p.client.config.CallbackBaseURL)
-	}
 
 	submitReq := &SubmitBillRequest{
 		MerchantReff:        req.MerchantReff,
 		PaymentMethodCode:   req.PaymentMethodCode,
-		URLListenerMerchant: listenerURL,
+		URLListenerMerchant: p.resolveListenerURL(req.CallbackURL),
 		URLRedirectMerchant: req.RedirectURL,
 		BillTitle:           req.BillTitle,
 		BillDescription:     req.BillDescription,

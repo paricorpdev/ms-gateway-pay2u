@@ -8,6 +8,7 @@ import (
 	"paygate/internal/common/constants"
 	"paygate/internal/entity"
 	"paygate/internal/exception"
+	"paygate/internal/logger"
 	"paygate/internal/model/converter"
 	"paygate/internal/model/payload"
 	"paygate/internal/provider"
@@ -49,16 +50,32 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 		return nil, exception.Internal(fmt.Errorf("default provider pay2u not configured"))
 	}
 
-	// Idempotency check
-	existing, err := u.txRepo.FindByIdempotencyKey(ctx, u.db, req.IdempotencyKey)
+	// Check existing transaction by request_id (replay protection)
+	requestID := logger.RequestIDFromContext(ctx)
+	if requestID == "" {
+		requestID = uuid.NewString()
+	}
+
+	existing, err := u.txRepo.FindByRequestID(ctx, u.db, requestID)
 	if err != nil {
-		return nil, exception.Internal(fmt.Errorf("find idempotency key: %w", err))
+		return nil, exception.Internal(fmt.Errorf("find transaction by request_id: %w", err))
 	}
 	if existing != nil {
 		return converter.ToPaymentResponse(existing), nil
 	}
 
-	merchantReff := fmt.Sprintf("X%d", time.Now().UnixNano())
+	merchantReff := req.MerchantReff
+	if merchantReff == "" {
+		merchantReff = fmt.Sprintf("X%d", time.Now().UnixNano())
+	}
+
+	existingReff, err := u.txRepo.FindByMerchantReff(ctx, u.db, merchantReff)
+	if err != nil {
+		return nil, exception.Internal(fmt.Errorf("check merchant reff: %w", err))
+	}
+	if existingReff != nil {
+		return nil, exception.Conflict(fmt.Sprintf("transaction with merchant_reff %q already exists", merchantReff))
+	}
 
 	currency := constants.CurrencyIDR
 
@@ -71,7 +88,6 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 	billReq := &provider.BillRequest{
 		MerchantReff:      merchantReff,
 		PaymentMethodCode: req.PaymentMethod,
-		CallbackURL:       req.CallbackURL,
 		RedirectURL:       req.RedirectURL,
 		BillTitle:         req.BillTitle,
 		BillDescription:   req.BillDescription,
@@ -99,7 +115,7 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 	tx := &entity.Transaction{
 		ID:              uuid.New(),
 		MerchantID:      merchantID,
-		IdempotencyKey:  req.IdempotencyKey,
+		RequestID:       requestID,
 		Provider:        p.Name(),
 		ProviderToken:   billResult.Token,
 		MerchantReff:    merchantReff,
@@ -116,8 +132,6 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 		CustomerEmail:   req.CustomerEmail,
 		BillTitle:       req.BillTitle,
 		BillDescription: req.BillDescription,
-		CallbackURL:     req.CallbackURL,
-		RedirectURL:     req.RedirectURL,
 		ExpiredAt:       expiredAt,
 	}
 

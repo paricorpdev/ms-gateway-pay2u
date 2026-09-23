@@ -8,9 +8,8 @@ import (
 // ToPaymentResponse maps a transaction entity onto its API representation.
 func ToPaymentResponse(tx *entity.Transaction) *payload.PaymentResponse {
 	return &payload.PaymentResponse{
-		ID:             tx.ID.String(),
-		IdempotencyKey: tx.IdempotencyKey,
-		Provider:       tx.Provider,
+		ID:           tx.ID.String(),
+		Provider:     tx.Provider,
 		MerchantReff:   tx.MerchantReff,
 		Status:         tx.Status,
 		PaymentMethod:  tx.PaymentMethod,

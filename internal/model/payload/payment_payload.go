@@ -4,7 +4,7 @@ import "time"
 
 // CreatePaymentRequest is the incoming request from internal services.
 type CreatePaymentRequest struct {
-	IdempotencyKey  string `json:"idempotency_key" validate:"required,max=255"`
+	MerchantReff    string `json:"merchant_reff" validate:"required,max=255"`
 	PaymentMethod   string `json:"payment_method" validate:"required,max=50"`
 	BillTitle       string `json:"bill_title" validate:"required,max=255"`
 	BillDescription string `json:"bill_description" validate:"omitempty,max=1000"`
@@ -16,14 +16,12 @@ type CreatePaymentRequest struct {
 	AmountDiscount  int64  `json:"amount_discount" validate:"gte=0"`
 	AmountTotal     int64  `json:"amount_total" validate:"required,gte=1"`
 	ExpiredMinutes  int    `json:"expired_minutes" validate:"gte=0"`
-	CallbackURL     string `json:"callback_url" validate:"omitempty,url"`
 	RedirectURL     string `json:"redirect_url" validate:"omitempty,url"`
 }
 
 // PaymentResponse is returned after creating or querying a payment.
 type PaymentResponse struct {
 	ID             string     `json:"id"`
-	IdempotencyKey string     `json:"idempotency_key"`
 	Provider       string     `json:"provider"`
 	MerchantReff   string     `json:"merchant_reff"`
 	Status         string     `json:"status"`

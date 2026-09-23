@@ -51,7 +51,7 @@ type Transaction struct {
 	ID               uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	MerchantID       *uuid.UUID `gorm:"type:uuid;index" json:"merchant_id,omitempty"`
 	Merchant         *Merchant  `gorm:"foreignKey:MerchantID" json:"merchant,omitempty"`
-	IdempotencyKey   string     `gorm:"uniqueIndex;size:255;not null" json:"idempotency_key"`
+	RequestID        string     `gorm:"column:request_id;uniqueIndex;size:255;not null" json:"request_id"`
 	Provider         string     `gorm:"size:50;not null;default:'pay2u'" json:"provider"`
 	ProviderToken    string     `gorm:"size:255" json:"provider_token,omitempty"`
 	MerchantReff     string     `gorm:"uniqueIndex;size:255;not null" json:"merchant_reff"`
@@ -68,8 +68,6 @@ type Transaction struct {
 	CustomerEmail    string     `gorm:"size:255" json:"customer_email,omitempty"`
 	BillTitle        string     `gorm:"size:255" json:"bill_title,omitempty"`
 	BillDescription  string     `gorm:"type:text" json:"bill_description,omitempty"`
-	CallbackURL      string     `gorm:"type:text" json:"callback_url,omitempty"`
-	RedirectURL      string     `gorm:"type:text" json:"redirect_url,omitempty"`
 	ProviderCallback JSONB      `gorm:"type:jsonb" json:"provider_callback,omitempty"`
 	PaymentReff      string     `gorm:"size:255" json:"payment_reff,omitempty"`
 	ExpiredAt        *time.Time `json:"expired_at,omitempty"`

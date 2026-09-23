@@ -68,3 +68,41 @@ func TestParseCallback(t *testing.T) {
 		t.Errorf("Status = %d; want 1", res.Status)
 	}
 }
+
+func TestResolveListenerURL(t *testing.T) {
+	tests := []struct {
+		name           string
+		baseURL        string
+		reqCallbackURL string
+		expected       string
+	}{
+		{
+			name:           "uses paygate callback base url when configured",
+			baseURL:        "https://paygate.example.com",
+			reqCallbackURL: "https://merchant.example.com/callback",
+			expected:       "https://paygate.example.com/api/v1/payments/callback/pay2u",
+		},
+		{
+			name:           "strips trailing slash from callback base url",
+			baseURL:        "https://paygate.example.com/",
+			reqCallbackURL: "",
+			expected:       "https://paygate.example.com/api/v1/payments/callback/pay2u",
+		},
+		{
+			name:           "falls back to request callback url when base url is empty",
+			baseURL:        "",
+			reqCallbackURL: "https://merchant.example.com/callback",
+			expected:       "https://merchant.example.com/callback",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewProvider(&Client{config: Config{CallbackBaseURL: tt.baseURL}})
+			actual := p.resolveListenerURL(tt.reqCallbackURL)
+			if actual != tt.expected {
+				t.Errorf("resolveListenerURL(%q) = %q; want %q", tt.reqCallbackURL, actual, tt.expected)
+			}
+		})
+	}
+}

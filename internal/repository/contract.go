@@ -14,7 +14,7 @@ type TransactionRepository interface {
 	Create(ctx context.Context, db *gorm.DB, tx *entity.Transaction) error
 	Save(ctx context.Context, db *gorm.DB, tx *entity.Transaction) error
 	FindByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*entity.Transaction, error)
-	FindByIdempotencyKey(ctx context.Context, db *gorm.DB, key string) (*entity.Transaction, error)
+	FindByRequestID(ctx context.Context, db *gorm.DB, requestID string) (*entity.Transaction, error)
 	FindByMerchantReff(ctx context.Context, db *gorm.DB, reff string) (*entity.Transaction, error)
 	FindByProviderToken(ctx context.Context, db *gorm.DB, token string) (*entity.Transaction, error)
 	UpdateStatus(ctx context.Context, db *gorm.DB, id uuid.UUID, status string, updates map[string]any) error

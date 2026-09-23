@@ -194,8 +194,8 @@ Client Application / Webhook Caller
 ┌────────────────────────────────────────┐
 │ Usecase Layer                          │
 │ 1. Struct validation (validator/v10)   │
-│ 2. Idempotency key lookup (Postgres)   │
-│    (Return stored record if duplicate) │
+│ 2. Request ID lookup (Postgres)        │
+│    (Return stored record if replay)    │
 └──────────────────┬─────────────────────┘
                    │
                    ▼

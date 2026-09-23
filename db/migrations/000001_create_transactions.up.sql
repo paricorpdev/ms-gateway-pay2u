@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS transactions (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    idempotency_key VARCHAR(255) UNIQUE NOT NULL,
+    request_id      VARCHAR(255) UNIQUE NOT NULL,
     provider        VARCHAR(50)  NOT NULL DEFAULT 'pay2u',
     provider_token  VARCHAR(255),
     merchant_reff   VARCHAR(255) UNIQUE NOT NULL,
@@ -30,3 +30,5 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX idx_transactions_status ON transactions(status);
 CREATE INDEX idx_transactions_provider_token ON transactions(provider_token);
 CREATE INDEX idx_transactions_merchant_reff ON transactions(merchant_reff);
+CREATE INDEX idx_transactions_request_id ON transactions(request_id);
+
