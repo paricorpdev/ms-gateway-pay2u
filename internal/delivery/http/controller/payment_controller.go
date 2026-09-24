@@ -35,33 +35,47 @@ func (c *PaymentController) CreatePayment(ctx *fiber.Ctx) error {
 	return response.Created(ctx, res)
 }
 
+func (c *PaymentController) getParamRef(ctx *fiber.Ctx) (string, error) {
+	ref := ctx.Params("merchant_reff")
+	if ref == "" {
+		ref = ctx.Params("reff")
+	}
+	if ref == "" {
+		ref = ctx.Params("uuid")
+	}
+	if ref == "" {
+		return "", exception.BadRequest("merchant_reff is required")
+	}
+	return ref, nil
+}
+
 func (c *PaymentController) GetPayment(ctx *fiber.Ctx) error {
-	id, err := PathUUID(ctx)
+	ref, err := c.getParamRef(ctx)
 	if err != nil {
 		return err
 	}
 
-	ctx.Locals(constants.LocalsTransactionID, id)
-	res, err := c.paymentUC.GetPayment(ctx.UserContext(), id)
+	res, err := c.paymentUC.GetPayment(ctx.UserContext(), ref)
 	if err != nil {
 		return err
 	}
 
+	ctx.Locals(constants.LocalsTransactionID, res.ID)
 	return response.OK(ctx, res)
 }
 
 func (c *PaymentController) RefreshPayment(ctx *fiber.Ctx) error {
-	id, err := PathUUID(ctx)
+	ref, err := c.getParamRef(ctx)
 	if err != nil {
 		return err
 	}
 
-	ctx.Locals(constants.LocalsTransactionID, id)
-	res, err := c.paymentUC.RefreshPayment(ctx.UserContext(), id)
+	res, err := c.paymentUC.RefreshPayment(ctx.UserContext(), ref)
 	if err != nil {
 		return err
 	}
 
+	ctx.Locals(constants.LocalsTransactionID, res.ID)
 	return response.OK(ctx, res)
 }
 

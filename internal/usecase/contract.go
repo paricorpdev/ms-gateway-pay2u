@@ -11,8 +11,8 @@ import (
 
 type PaymentService interface {
 	CreatePayment(ctx context.Context, req *payload.CreatePaymentRequest) (*payload.PaymentResponse, error)
-	GetPayment(ctx context.Context, id uuid.UUID) (*payload.PaymentResponse, error)
-	RefreshPayment(ctx context.Context, id uuid.UUID) (*payload.PaymentResponse, error)
+	GetPayment(ctx context.Context, identifier string) (*payload.PaymentResponse, error)
+	RefreshPayment(ctx context.Context, identifier string) (*payload.PaymentResponse, error)
 	HandleCallback(ctx context.Context, providerName string, rawBody []byte) error
 }
 

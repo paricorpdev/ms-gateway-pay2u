@@ -121,8 +121,8 @@ func (c *RouteConfig) setupProtectedRoutes() {
 
 		payments := c.App.Group("/api/v1/payments", paymentAuthHandlers...)
 		payments.Post("/", c.PaymentController.CreatePayment)
-		payments.Get("/:uuid", c.PaymentController.GetPayment)
-		payments.Post("/:uuid/refresh", c.PaymentController.RefreshPayment)
+		payments.Get("/:merchant_reff", c.PaymentController.GetPayment)
+		payments.Post("/:merchant_reff/refresh", c.PaymentController.RefreshPayment)
 	}
 
 	if c.MerchantController != nil {

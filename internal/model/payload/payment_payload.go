@@ -12,9 +12,9 @@ type CreatePaymentRequest struct {
 	CustomerPhone   string `json:"customer_phone" validate:"required,max=50"`
 	CustomerEmail   string `json:"customer_email" validate:"omitempty,email,max=255"`
 	Amount          int64  `json:"amount" validate:"required,gte=1"`
-	AmountAdmin     int64  `json:"amount_admin" validate:"gte=0"`
-	AmountDiscount  int64  `json:"amount_discount" validate:"gte=0"`
-	AmountTotal     int64  `json:"amount_total" validate:"required,gte=1"`
+	AmountAdmin     int64  `json:"amount_admin,omitempty" validate:"omitempty,gte=0"`
+	AmountDiscount  int64  `json:"amount_discount,omitempty" validate:"omitempty,gte=0"`
+	AmountTotal     int64  `json:"amount_total,omitempty" validate:"omitempty,gte=0"`
 	ExpiredMinutes  int    `json:"expired_minutes" validate:"gte=0"`
 	RedirectURL     string `json:"redirect_url" validate:"omitempty,url"`
 }

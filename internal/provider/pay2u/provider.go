@@ -134,13 +134,10 @@ func (p *Provider) ParseCallback(payload []byte) (*provider.CallbackResult, erro
 
 func (p *Provider) getBillingURL(paymentMethodCode string) string {
 	code := strings.ToUpper(paymentMethodCode)
-	if strings.HasPrefix(code, "VA-") || strings.HasPrefix(code, "BRIVA-") || strings.HasPrefix(code, "BNIVA-") {
-		return p.client.config.BaseURL + p.client.config.BillingVAURL
-	}
-	if strings.HasPrefix(code, "QRIS-") {
+	if strings.HasPrefix(code, "QRIS") {
 		return p.client.config.BaseURL + p.client.config.BillingQRISURL
 	}
-	if strings.HasPrefix(code, "CC-") {
+	if strings.HasPrefix(code, "CC") {
 		return p.client.config.BaseURL + p.client.config.BillingCCURL
 	}
 	return p.client.config.BaseURL + p.client.config.BillingVAURL

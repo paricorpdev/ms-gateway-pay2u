@@ -28,3 +28,8 @@ const (
 const (
 	CurrencyIDR = "IDR"
 )
+
+const (
+	AdminFeeVA    = int64(3500)
+	AdminRateQRIS = 0.007
+)

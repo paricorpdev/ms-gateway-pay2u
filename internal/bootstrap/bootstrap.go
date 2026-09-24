@@ -13,10 +13,12 @@ import (
 	"paygate/internal/provider/pay2u"
 	"paygate/internal/repository"
 	"paygate/internal/usecase"
+	"paygate/internal/webhook"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	fiberredis "github.com/gofiber/storage/redis/v3"
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
@@ -36,6 +38,7 @@ type Container struct {
 	Payment     usecase.PaymentService
 	Merchant    usecase.MerchantService
 	AuditWorker *audit.AuditWorker
+	Dispatcher  webhook.Dispatcher
 }
 
 func NewContainer(deps *Dependencies) *Container {
@@ -79,21 +82,36 @@ func NewContainer(deps *Dependencies) *Container {
 	}
 
 	txRepo := repository.NewTransactionRepository()
+	merchantRepo := repository.NewMerchantRepository()
+	merchantUC := usecase.NewMerchantUseCase(deps.DB, merchantRepo, cache)
+
+	var redisClient goredis.UniversalClient
+	if deps.Redis != nil {
+		redisClient = deps.Redis.Conn()
+	}
+
+	dispatchRepo := repository.NewWebhookDispatchRepository()
+	var dispatcher webhook.Dispatcher
+	if deps.DB != nil {
+		dispatcher = webhook.NewDispatcher(deps.DB, redisClient, dispatchRepo, deps.Log)
+		dispatcher.Start(context.Background())
+	}
 
 	paymentUC := usecase.NewPaymentUseCase(
 		deps.DB,
 		deps.Validate,
 		txRepo,
+		merchantRepo,
+		dispatchRepo,
+		dispatcher,
 		providers,
 	)
-
-	merchantRepo := repository.NewMerchantRepository()
-	merchantUC := usecase.NewMerchantUseCase(deps.DB, merchantRepo, cache)
 
 	return &Container{
 		Payment:     paymentUC,
 		Merchant:    merchantUC,
 		AuditWorker: auditWorker,
+		Dispatcher:  dispatcher,
 	}
 }
 

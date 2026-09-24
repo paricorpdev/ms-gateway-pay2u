@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	"paygate/internal/model/payload"
 	"paygate/internal/provider"
 	"paygate/internal/repository"
+	"paygate/internal/utils"
+	"paygate/internal/webhook"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -20,23 +23,32 @@ import (
 )
 
 type PaymentUseCase struct {
-	db        *gorm.DB
-	validate  *validator.Validate
-	txRepo    repository.TransactionRepository
-	providers map[string]provider.PaymentProvider
+	db           *gorm.DB
+	validate     *validator.Validate
+	txRepo       repository.TransactionRepository
+	merchantRepo repository.MerchantRepository
+	dispatchRepo repository.WebhookDispatchRepository
+	dispatcher   webhook.Dispatcher
+	providers    map[string]provider.PaymentProvider
 }
 
 func NewPaymentUseCase(
 	db *gorm.DB,
 	validate *validator.Validate,
 	txRepo repository.TransactionRepository,
+	merchantRepo repository.MerchantRepository,
+	dispatchRepo repository.WebhookDispatchRepository,
+	dispatcher webhook.Dispatcher,
 	providers map[string]provider.PaymentProvider,
 ) *PaymentUseCase {
 	return &PaymentUseCase{
-		db:        db,
-		validate:  validate,
-		txRepo:    txRepo,
-		providers: providers,
+		db:           db,
+		validate:     validate,
+		txRepo:       txRepo,
+		merchantRepo: merchantRepo,
+		dispatchRepo: dispatchRepo,
+		dispatcher:   dispatcher,
+		providers:    providers,
 	}
 }
 
@@ -75,6 +87,14 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 	}
 	if existingReff != nil {
 		return nil, exception.Conflict(fmt.Sprintf("transaction with merchant_reff %q already exists", merchantReff))
+	}
+
+	// Calculate admin fee and amount_total from paygate rules
+	adminFee := utils.CalculateAdminFee(req.PaymentMethod, req.Amount)
+	req.AmountAdmin = adminFee
+	req.AmountTotal = req.Amount + adminFee - req.AmountDiscount
+	if req.AmountTotal < 0 {
+		req.AmountTotal = 0
 	}
 
 	currency := constants.CurrencyIDR
@@ -142,18 +162,43 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 	return converter.ToPaymentResponse(tx), nil
 }
 
-func (u *PaymentUseCase) GetPayment(ctx context.Context, id uuid.UUID) (*payload.PaymentResponse, error) {
-	tx, err := u.txRepo.FindByID(ctx, u.db, id)
+func (u *PaymentUseCase) findTransaction(ctx context.Context, identifier string) (*entity.Transaction, error) {
+	tx, err := u.txRepo.FindByMerchantReff(ctx, u.db, identifier)
+	if err != nil {
+		return nil, exception.Internal(fmt.Errorf("find transaction by merchant_reff: %w", err))
+	}
+	if tx == nil {
+		if uid, parseErr := uuid.Parse(identifier); parseErr == nil {
+			tx, err = u.txRepo.FindByID(ctx, u.db, uid)
+			if err != nil && !exception.IsNotFound(err) {
+				return nil, exception.Internal(fmt.Errorf("find transaction by id: %w", err))
+			}
+		}
+	}
+	return tx, nil
+}
+
+func (u *PaymentUseCase) GetPayment(ctx context.Context, identifier string) (*payload.PaymentResponse, error) {
+	tx, err := u.findTransaction(ctx, identifier)
 	if err != nil {
 		return nil, err
 	}
+
+	if tx == nil {
+		return nil, exception.NotFound(fmt.Sprintf("transaction with merchant_reff %q not found", identifier))
+	}
+
 	return converter.ToPaymentResponse(tx), nil
 }
 
-func (u *PaymentUseCase) RefreshPayment(ctx context.Context, id uuid.UUID) (*payload.PaymentResponse, error) {
-	tx, err := u.txRepo.FindByID(ctx, u.db, id)
+func (u *PaymentUseCase) RefreshPayment(ctx context.Context, identifier string) (*payload.PaymentResponse, error) {
+	tx, err := u.findTransaction(ctx, identifier)
 	if err != nil {
 		return nil, err
+	}
+
+	if tx == nil {
+		return nil, exception.NotFound(fmt.Sprintf("transaction with merchant_reff %q not found", identifier))
 	}
 
 	// if tx.Status != constants.TransactionStatusPending {
@@ -175,8 +220,9 @@ func (u *PaymentUseCase) RefreshPayment(ctx context.Context, id uuid.UUID) (*pay
 		updates := map[string]any{
 			"status": newStatus,
 		}
+		var paidAt time.Time
 		if newStatus == constants.TransactionStatusSuccess {
-			paidAt := time.Now()
+			paidAt = time.Now()
 			if res.PaymentDate != "" {
 				if t, err := time.ParseInLocation("2006-01-02 15:04:05", res.PaymentDate, time.Local); err == nil {
 					paidAt = t
@@ -193,20 +239,18 @@ func (u *PaymentUseCase) RefreshPayment(ctx context.Context, id uuid.UUID) (*pay
 			return nil, exception.Internal(fmt.Errorf("update transaction status: %w", err))
 		}
 		tx.Status = newStatus
+
+		if newStatus == constants.TransactionStatusSuccess {
+			u.triggerMerchantWebhook(ctx, tx, tx.PaymentReff, paidAt)
+		}
 	} else if newStatus == constants.TransactionStatusSuccess {
-		var updates map[string]any
+		updates := make(map[string]any)
 		if res.PaymentReff != "" && tx.PaymentReff == "" {
-			if updates == nil {
-				updates = make(map[string]any)
-			}
 			updates["payment_reff"] = res.PaymentReff
 			tx.PaymentReff = res.PaymentReff
 		}
 		if tx.PaidAt == nil && res.PaymentDate != "" {
 			if t, err := time.ParseInLocation("2006-01-02 15:04:05", res.PaymentDate, time.Local); err == nil {
-				if updates == nil {
-					updates = make(map[string]any)
-				}
 				updates["paid_at"] = &t
 				tx.PaidAt = &t
 			}
@@ -255,12 +299,79 @@ func (u *PaymentUseCase) HandleCallback(ctx context.Context, providerName string
 	if cb.PaymentReff != "" {
 		updates["payment_reff"] = cb.PaymentReff
 	}
+	var paidAt time.Time
 	if newStatus == constants.TransactionStatusSuccess {
-		now := time.Now()
-		updates["paid_at"] = &now
+		paidAt = time.Now()
+		updates["paid_at"] = &paidAt
 	}
 
-	return u.txRepo.UpdateStatus(ctx, u.db, tx.ID, newStatus, updates)
+	if err := u.txRepo.UpdateStatus(ctx, u.db, tx.ID, newStatus, updates); err != nil {
+		return err
+	}
+
+	if newStatus == constants.TransactionStatusSuccess {
+		u.triggerMerchantWebhook(ctx, tx, cb.PaymentReff, paidAt)
+	}
+
+	return nil
+}
+
+func (u *PaymentUseCase) triggerMerchantWebhook(ctx context.Context, tx *entity.Transaction, paymentReff string, paidAt time.Time) {
+	if u.dispatcher == nil || u.dispatchRepo == nil || u.merchantRepo == nil || tx.MerchantID == nil {
+		return
+	}
+
+	merchant, err := u.merchantRepo.FindByID(ctx, u.db, *tx.MerchantID)
+	if err != nil || merchant == nil || !merchant.IsActive || merchant.WebhookURL == "" {
+		return
+	}
+
+	if paidAt.IsZero() {
+		paidAt = time.Now()
+	}
+
+	payloadMap := map[string]any{
+		"event":           entity.WebhookEventPaymentSuccess,
+		"payment_id":      tx.ID.String(),
+		"merchant_reff":   tx.MerchantReff,
+		"payment_method":  tx.PaymentMethod,
+		"payment_code":    tx.PaymentCode,
+		"amount":          tx.Amount,
+		"amount_admin":    tx.AmountAdmin,
+		"amount_discount": tx.AmountDiscount,
+		"amount_total":    tx.AmountTotal,
+		"currency":        tx.Currency,
+		"status":          constants.TransactionStatusSuccess,
+		"paid_at":         paidAt.Format(time.RFC3339),
+		"payment_reff":    paymentReff,
+	}
+
+	payloadBytes, err := json.Marshal(payloadMap)
+	if err != nil {
+		logger.FromContext(ctx).WithError(err).Error("Failed to marshal webhook payload")
+		return
+	}
+
+	dispatch := &entity.WebhookDispatch{
+		ID:            uuid.New(),
+		TransactionID: tx.ID,
+		MerchantID:    merchant.ID,
+		TargetURL:     merchant.WebhookURL,
+		EventType:     entity.WebhookEventPaymentSuccess,
+		Payload:       entity.JSONB(payloadBytes),
+		Status:        entity.WebhookStatusPending,
+		Attempts:      0,
+		MaxAttempts:   3,
+	}
+
+	if err := u.dispatchRepo.CreateDispatch(ctx, u.db, dispatch); err != nil {
+		logger.FromContext(ctx).WithError(err).Error("Failed to persist webhook dispatch record")
+		return
+	}
+
+	if err := u.dispatcher.Enqueue(ctx, dispatch.ID); err != nil {
+		logger.FromContext(ctx).WithError(err).Warn("Failed to enqueue webhook dispatch; will be recovered by scanner")
+	}
 }
 
 func mapProviderStatus(status int) string {

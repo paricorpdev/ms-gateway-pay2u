@@ -94,6 +94,12 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.App.ShutdownTimeout)
 	defer cancel()
 
+	if container.Dispatcher != nil {
+		if err := container.Dispatcher.Stop(shutdownCtx); err != nil {
+			log.WithError(err).Warn("webhook dispatcher shutdown did not drain cleanly before timeout")
+		}
+	}
+
 	if err := container.AuditWorker.Stop(shutdownCtx); err != nil {
 		log.WithError(err).Warn("audit worker shutdown did not drain cleanly before timeout")
 	}

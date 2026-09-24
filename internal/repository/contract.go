@@ -40,9 +40,19 @@ type MerchantRepository interface {
 	Update(ctx context.Context, db *gorm.DB, id uuid.UUID, updates map[string]any) error
 }
 
+type WebhookDispatchRepository interface {
+	CreateDispatch(ctx context.Context, db *gorm.DB, d *entity.WebhookDispatch) error
+	ClaimDispatch(ctx context.Context, db *gorm.DB, id uuid.UUID, workerID string, lockDuration time.Duration) (bool, error)
+	ReleaseDispatch(ctx context.Context, db *gorm.DB, id uuid.UUID, status string, attempts int, nextRetry *time.Time) error
+	CreateDispatchLog(ctx context.Context, db *gorm.DB, l *entity.WebhookDispatchLog) error
+	FindDispatchByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*entity.WebhookDispatch, error)
+	FindRecoverableDispatches(ctx context.Context, db *gorm.DB, limit int) ([]*entity.WebhookDispatch, error)
+}
+
 var (
-	_ TransactionRepository = (*transactionRepository)(nil)
-	_ CacheRepository       = (*redisRepository)(nil)
-	_ AuditLogRepository   = (*auditLogRepository)(nil)
-	_ MerchantRepository   = (*merchantRepository)(nil)
+	_ TransactionRepository     = (*transactionRepository)(nil)
+	_ CacheRepository           = (*redisRepository)(nil)
+	_ AuditLogRepository       = (*auditLogRepository)(nil)
+	_ MerchantRepository       = (*merchantRepository)(nil)
+	_ WebhookDispatchRepository = (*webhookDispatchRepository)(nil)
 )
