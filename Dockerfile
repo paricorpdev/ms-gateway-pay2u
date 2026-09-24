@@ -35,11 +35,14 @@ RUN apk add --no-cache ca-certificates tzdata && \
 WORKDIR /app
 
 # Copy binary with non-root ownership & restricted execute permissions
-COPY --from=builder --chown=app:app --chmod=500 /app/bin/paygate /app/paygate
+COPY --from=builder --chown=app:app --chmod=500 \
+    /app/bin/paygate /app/paygate
 
-# Copy default config template and migrations
-COPY --from=builder --chown=app:app --chmod=644 /app/config.yml.example /app/config.yml
-COPY --from=builder --chown=app:app /app/db/migrations /app/db/migrations
+COPY --from=builder --chown=app:app --chmod=644 \
+    /app/config.yml /app/config.yml
+
+COPY --from=builder --chown=app:app \
+    /app/db/migrations /app/db/migrations
 
 USER app
 
