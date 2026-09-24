@@ -73,6 +73,26 @@ func (p *Provider) GetBill(ctx context.Context, token, methodCode string) (*prov
 		return nil, err
 	}
 
+	status := res.Status
+	var paymentReff string
+	var paymentDate string
+
+	for _, payment := range res.Payments {
+		if payment.Status == 1 {
+			status = 1
+			paymentReff = payment.PaymentReff
+			paymentDate = payment.PaymentDate
+			break
+		}
+	}
+
+	if status == 0 && len(res.Payments) > 0 {
+		latest := res.Payments[len(res.Payments)-1]
+		status = latest.Status
+		paymentReff = latest.PaymentReff
+		paymentDate = latest.PaymentDate
+	}
+
 	return &provider.BillResult{
 		Token:             res.Token,
 		MerchantReff:      res.MerchantReff,
@@ -80,7 +100,9 @@ func (p *Provider) GetBill(ctx context.Context, token, methodCode string) (*prov
 		PaymentCode:       res.PaymentCode,
 		AmountTotal:       int64(res.AmountTotal),
 		ExpiredMinutes:    res.ExpiredMinutes,
-		Status:            res.Status,
+		Status:            status,
+		PaymentReff:       paymentReff,
+		PaymentDate:       paymentDate,
 	}, nil
 }
 

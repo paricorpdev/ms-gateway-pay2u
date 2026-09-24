@@ -176,14 +176,44 @@ func (u *PaymentUseCase) RefreshPayment(ctx context.Context, id uuid.UUID) (*pay
 			"status": newStatus,
 		}
 		if newStatus == constants.TransactionStatusSuccess {
-			now := time.Now()
-			updates["paid_at"] = &now
-			tx.PaidAt = &now
+			paidAt := time.Now()
+			if res.PaymentDate != "" {
+				if t, err := time.ParseInLocation("2006-01-02 15:04:05", res.PaymentDate, time.Local); err == nil {
+					paidAt = t
+				}
+			}
+			updates["paid_at"] = &paidAt
+			tx.PaidAt = &paidAt
+		}
+		if res.PaymentReff != "" {
+			updates["payment_reff"] = res.PaymentReff
+			tx.PaymentReff = res.PaymentReff
 		}
 		if err := u.txRepo.UpdateStatus(ctx, u.db, tx.ID, newStatus, updates); err != nil {
 			return nil, exception.Internal(fmt.Errorf("update transaction status: %w", err))
 		}
 		tx.Status = newStatus
+	} else if newStatus == constants.TransactionStatusSuccess {
+		var updates map[string]any
+		if res.PaymentReff != "" && tx.PaymentReff == "" {
+			if updates == nil {
+				updates = make(map[string]any)
+			}
+			updates["payment_reff"] = res.PaymentReff
+			tx.PaymentReff = res.PaymentReff
+		}
+		if tx.PaidAt == nil && res.PaymentDate != "" {
+			if t, err := time.ParseInLocation("2006-01-02 15:04:05", res.PaymentDate, time.Local); err == nil {
+				if updates == nil {
+					updates = make(map[string]any)
+				}
+				updates["paid_at"] = &t
+				tx.PaidAt = &t
+			}
+		}
+		if len(updates) > 0 {
+			_ = u.txRepo.UpdateStatus(ctx, u.db, tx.ID, tx.Status, updates)
+		}
 	}
 
 	return converter.ToPaymentResponse(tx), nil

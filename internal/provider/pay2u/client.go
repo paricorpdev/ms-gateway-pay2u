@@ -57,25 +57,32 @@ type tokenData struct {
 	Token string `json:"token"`
 }
 
+type BillPayment struct {
+	PaymentReff string `json:"payment_reff"`
+	PaymentDate string `json:"payment_date"`
+	Status      int    `json:"status"`
+}
+
 type BillData struct {
-	Token               string  `json:"token"`
-	BillTitle           string  `json:"bill_title"`
-	BillDescription     string  `json:"bill_description"`
-	BillCurrency        string  `json:"bill_currency"`
-	Amount              float64 `json:"amount"`
-	AmountAdmin         float64 `json:"amount_admin"`
-	AmountDiscount      float64 `json:"amount_discount"`
-	AmountTotal         float64 `json:"amount_total"`
-	BillCustomerName    string  `json:"bill_customer_name"`
-	BillCustomerPhone   string  `json:"bill_customer_phone"`
-	BillCustomerEmail   string  `json:"bill_customer_email"`
-	MerchantReff        string  `json:"merchant_reff"`
-	ExpiredMinutes      int     `json:"expired_minutes"`
-	PaymentMethodCode   string  `json:"payment_method_code"`
-	PaymentCode         string  `json:"payment_code"`
-	Status              int     `json:"status"`
-	URLListenerMerchant string  `json:"url_listener_merchant"`
-	URLRedirectMerchant string  `json:"url_redirect_merchant"`
+	Token               string        `json:"token"`
+	BillTitle           string        `json:"bill_title"`
+	BillDescription     string        `json:"bill_description"`
+	BillCurrency        string        `json:"bill_currency"`
+	Amount              float64       `json:"amount"`
+	AmountAdmin         float64       `json:"amount_admin"`
+	AmountDiscount      float64       `json:"amount_discount"`
+	AmountTotal         float64       `json:"amount_total"`
+	BillCustomerName    string        `json:"bill_customer_name"`
+	BillCustomerPhone   string        `json:"bill_customer_phone"`
+	BillCustomerEmail   string        `json:"bill_customer_email"`
+	MerchantReff        string        `json:"merchant_reff"`
+	ExpiredMinutes      int           `json:"expired_minutes"`
+	PaymentMethodCode   string        `json:"payment_method_code"`
+	PaymentCode         string        `json:"payment_code"`
+	Status              int           `json:"status"`
+	Payments            []BillPayment `json:"payments,omitempty"`
+	URLListenerMerchant string        `json:"url_listener_merchant"`
+	URLRedirectMerchant string        `json:"url_redirect_merchant"`
 }
 
 type SubmitBillRequest struct {

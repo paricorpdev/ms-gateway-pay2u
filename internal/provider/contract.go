@@ -36,6 +36,8 @@ type BillResult struct {
 	AmountTotal       int64
 	ExpiredMinutes    int
 	Status            int
+	PaymentReff       string
+	PaymentDate       string
 }
 
 type CallbackResult struct {

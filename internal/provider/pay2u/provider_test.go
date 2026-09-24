@@ -1,7 +1,11 @@
 package pay2u
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestGetBillingURL(t *testing.T) {
@@ -106,3 +110,61 @@ func TestResolveListenerURL(t *testing.T) {
 		})
 	}
 }
+
+func TestGetBill_ParsePaymentsArray(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"mock-token","expires_in":3600}`))
+			return
+		}
+		if r.URL.Path == "/billing/get" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"rc": "00",
+				"rd": "Success",
+				"data": {
+					"token": "AILRWULCE1TGLRFYLGPX",
+					"merchant_reff": "ref-1790222645904-5585",
+					"payment_method_code": "QRIS-MITRA",
+					"payment_code": "MOCK-CODE",
+					"amount_total": 78500,
+					"payments": [
+						{
+							"payment_reff": "TW2026092487",
+							"payment_date": "2026-09-24 11:25:01",
+							"status": 1
+						}
+					]
+				}
+			}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	cfg := Config{
+		BaseURL:       ts.URL,
+		OAuthURL:      "/oauth",
+		BillingGetURL: "/billing/get",
+		Timeout:       2 * time.Second,
+	}
+	p := NewProvider(NewClient(cfg, nil, nil))
+
+	res, err := p.GetBill(context.Background(), "AILRWULCE1TGLRFYLGPX", "QRIS-MITRA")
+	if err != nil {
+		t.Fatalf("unexpected error getting bill: %v", err)
+	}
+
+	if res.Status != 1 {
+		t.Errorf("expected Status 1 (SUCCESS), got %d", res.Status)
+	}
+	if res.PaymentReff != "TW2026092487" {
+		t.Errorf("expected PaymentReff TW2026092487, got %q", res.PaymentReff)
+	}
+	if res.PaymentDate != "2026-09-24 11:25:01" {
+		t.Errorf("expected PaymentDate '2026-09-24 11:25:01', got %q", res.PaymentDate)
+	}
+}
+

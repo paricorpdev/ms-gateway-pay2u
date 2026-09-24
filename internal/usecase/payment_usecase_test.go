@@ -97,6 +97,9 @@ func (r *inMemoryTxRepo) UpdateStatus(ctx context.Context, db *gorm.DB, id uuid.
 	if paidAt, ok := updates["paid_at"].(*time.Time); ok {
 		tx.PaidAt = paidAt
 	}
+	if paymentReff, ok := updates["payment_reff"].(string); ok {
+		tx.PaymentReff = paymentReff
+	}
 	return nil
 }
 
@@ -311,3 +314,66 @@ func TestPaymentUseCase_HandleCallback(t *testing.T) {
 		t.Error("expected PaidAt to be set after successful callback")
 	}
 }
+
+func TestPaymentUseCase_RefreshPayment_Success(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	mockProv := &mockProvider{
+		billResult: &provider.BillResult{
+			Token:        "AILRWULCE1TGLRFYLGPX",
+			MerchantReff: "ref-1790222645904-5585",
+			PaymentCode:  "MDAwMjAx...",
+			Status:       1,
+			PaymentReff:  "TW2026092487",
+			PaymentDate:  "2026-09-24 11:25:01",
+		},
+	}
+	val := validator.New()
+	uc := NewPaymentUseCase(nil, val, repo, map[string]provider.PaymentProvider{"pay2u": mockProv})
+
+	ctx := context.Background()
+	req := &payload.CreatePaymentRequest{
+		MerchantReff:  "ref-1790222645904-5585",
+		PaymentMethod: "QRIS-MITRA",
+		BillTitle:     "QRIS Order #1",
+		CustomerName:  "Siti Rahma",
+		CustomerPhone: "081298765432",
+		Amount:        75000,
+		AmountTotal:   78500,
+	}
+
+	createRes, err := uc.CreatePayment(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error creating payment: %v", err)
+	}
+	if createRes.Status != constants.TransactionStatusPending {
+		t.Fatalf("expected initial status PENDING, got %s", createRes.Status)
+	}
+
+	txID, _ := uuid.Parse(createRes.ID)
+	refreshRes, err := uc.RefreshPayment(ctx, txID)
+	if err != nil {
+		t.Fatalf("unexpected error on RefreshPayment: %v", err)
+	}
+
+	if refreshRes.Status != constants.TransactionStatusSuccess {
+		t.Errorf("expected status SUCCESS on refresh, got %s", refreshRes.Status)
+	}
+	if refreshRes.PaymentReff != "TW2026092487" {
+		t.Errorf("expected PaymentReff TW2026092487, got %q", refreshRes.PaymentReff)
+	}
+	if refreshRes.PaidAt == nil {
+		t.Error("expected PaidAt to be set after refresh")
+	} else if refreshRes.PaidAt.Format("2006-01-02 15:04:05") != "2026-09-24 11:25:01" {
+		t.Errorf("expected PaidAt 2026-09-24 11:25:01, got %v", refreshRes.PaidAt.Format("2006-01-02 15:04:05"))
+	}
+
+	// Verify DB state
+	savedTx, _ := repo.FindByID(ctx, nil, txID)
+	if savedTx.Status != constants.TransactionStatusSuccess {
+		t.Errorf("expected saved tx status SUCCESS, got %s", savedTx.Status)
+	}
+	if savedTx.PaymentReff != "TW2026092487" {
+		t.Errorf("expected saved tx PaymentReff TW2026092487, got %q", savedTx.PaymentReff)
+	}
+}
+
