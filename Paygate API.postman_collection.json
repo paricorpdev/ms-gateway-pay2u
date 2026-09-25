@@ -1,0 +1,1038 @@
+{
+  "info": {
+    "name": "Paygate API",
+    "description": "API Collection for Paygate (Internal Payment Gateway).\n\n### Getting Started\n1. **Environment**: Select 'Paygate API Environment'.\n2. **Authentication**:\n   - **Payments API** (`/api/v1/payments/*`): Requires `X-API-Key: {{api_key}}` (merchant key formatted as `pg_[code]_[entropy]`).\n   - **Admin API** (`/api/v1/admin/*`): Requires `X-API-Key: {{master_api_key}}` (default: `admin-paygate`).\n3. **Quick Setup**: Run 'Create Merchant (Localoka V2)' in the **Merchant Management** folder first to automatically issue and save a valid `api_key` to your Postman environment.\n4. **Audit & Deduplication**: Each request automatically generates `{{dynamic_request_id}}` and `{{dynamic_merchant_reff}}` via the collection pre-request script. Replay protection is handled via `X-Request-Id`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.variables.set('dynamic_request_id', 'req-' + pm.variables.replaceIn('{{$guid}}'));",
+          "pm.variables.set('dynamic_merchant_reff', 'ref-' + Date.now() + '-' + Math.floor(Math.random() * 10000));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Liveness Probe",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200 OK', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health/live",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health",
+            "live"
+          ]
+        },
+        "description": "Liveness probe endpoint to verify that the HTTP server process is alive."
+      },
+      "response": []
+    },
+    {
+      "name": "Readiness Probe",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200 OK', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health/ready",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "health",
+            "ready"
+          ]
+        },
+        "description": "Readiness probe endpoint checking downstream dependencies (PostgreSQL database and Redis cache)."
+      },
+      "response": []
+    },
+    {
+      "name": "Payments (Create)",
+      "description": "Endpoints for initiating new payment transactions across supported payment methods (Virtual Account, QRIS, Credit Card) with replay protection via X-Request-Id.",
+      "item": [
+        {
+          "name": "Create VA Payment (VA-MITRA)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "var data = jsonData.response_data || jsonData.data;",
+                  "if (data && data.id) {",
+                  "    pm.environment.set('payment_id', data.id);",
+                  "    pm.environment.set('merchant_reff', data.merchant_reff);",
+                  "    pm.environment.set('payment_code', data.payment_code);",
+                  "    pm.environment.set('last_request_id', pm.variables.get('dynamic_request_id'));",
+                  "    console.log('Saved payment_id:', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              },
+              {
+                "key": "X-Service-Name",
+                "value": "internal-pos-app"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_reff\": \"{{dynamic_merchant_reff}}\",\n  \"payment_method\": \"VA-MITRA\",\n  \"bill_title\": \"Order #1001 Payment\",\n  \"bill_description\": \"Pembelian Paket Belanja\",\n  \"customer_name\": \"Budi Santoso\",\n  \"customer_phone\": \"081234567890\",\n  \"customer_email\": \"budi@example.com\",\n  \"amount\": 50000,\n  \"expired_minutes\": 1440\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments"
+              ]
+            },
+            "description": "Creates a Virtual Account payment via Pay2U provider. Returns the VA number in `payment_code`."
+          },
+          "response": []
+        },
+        {
+          "name": "Create QRIS Payment (QRIS-MITRA)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var data = jsonData.response_data || jsonData.data;",
+                  "if (data && data.id) {",
+                  "    pm.environment.set('payment_id', data.id);",
+                  "    pm.environment.set('merchant_reff', data.merchant_reff);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              },
+              {
+                "key": "X-Service-Name",
+                "value": "internal-pos-app"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_reff\": \"{{dynamic_merchant_reff}}\",\n  \"payment_method\": \"QRIS-MITRA\",\n  \"bill_title\": \"QRIS Order #1002\",\n  \"bill_description\": \"Pembayaran QRIS Merchant\",\n  \"customer_name\": \"Siti Rahma\",\n  \"customer_phone\": \"081298765432\",\n  \"customer_email\": \"siti@example.com\",\n  \"amount\": 75000,\n  \"expired_minutes\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments"
+              ]
+            },
+            "description": "Creates a QRIS dynamic payment. Returns the QR raw string / URL in `payment_code`."
+          },
+          "response": []
+        },
+        {
+          "name": "Create CC Payment (CC-MITRA)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var data = jsonData.response_data || jsonData.data;",
+                  "if (data && data.id) {",
+                  "    pm.environment.set('payment_id', data.id);",
+                  "    pm.environment.set('merchant_reff', data.merchant_reff);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              },
+              {
+                "key": "X-Service-Name",
+                "value": "internal-ecommerce"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_reff\": \"{{dynamic_merchant_reff}}\",\n  \"payment_method\": \"CC-MITRA\",\n  \"bill_title\": \"Credit Card Order #1003\",\n  \"bill_description\": \"Pembayaran Kartu Kredit\",\n  \"customer_name\": \"Doni Setiawan\",\n  \"customer_phone\": \"081311223344\",\n  \"customer_email\": \"doni@example.com\",\n  \"amount\": 250000,\n  \"amount_admin\": 5000,\n  \"amount_discount\": 0,\n  \"amount_total\": 255000,\n  \"redirect_url\": \"{{redirect_url}}\",\n  \"expired_minutes\": 60\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments"
+              ]
+            },
+            "description": "Creates a Credit Card transaction. Returns 3DS redirect URL in `redirect_url`."
+          },
+          "response": []
+        },
+        {
+          "name": "Replay Request (Same X-Request-Id)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 or 201 OK (Replay Request)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var data = jsonData.response_data || jsonData.data;",
+                  "pm.test('Returns identical transaction ID', function () {",
+                  "    pm.expect(data.id).to.eql(pm.environment.get('payment_id'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{last_request_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_reff\": \"{{merchant_reff}}\",\n  \"payment_method\": \"VA-MITRA\",\n  \"bill_title\": \"Order #1001 Payment Replay\",\n  \"bill_description\": \"Pembelian Paket Belanja\",\n  \"customer_name\": \"Budi Santoso\",\n  \"amount\": 50000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments"
+              ]
+            },
+            "description": "Tests that resending a payment request with the identical `X-Request-Id` returns the existing transaction without creating duplicates."
+          },
+          "response": []
+        },
+        {
+          "name": "Duplicate Merchant Reff (409 Conflict)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409 Conflict', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Error code is CONFLICT', function () {",
+                  "    pm.expect(jsonData.error.code).to.eql('CONFLICT');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_reff\": \"{{merchant_reff}}\",\n  \"payment_method\": \"VA-MITRA\",\n  \"bill_title\": \"Order #1001 Duplicate Attempt\",\n  \"bill_description\": \"Testing Duplicate merchant_reff\",\n  \"customer_name\": \"Budi Santoso\",\n  \"amount\": 50000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments"
+              ]
+            },
+            "description": "Tests that sending a new request (new X-Request-Id) with an already used `merchant_reff` is rejected with 409 Conflict."
+          },
+          "response": []
+        },
+        {
+          "name": "Negative - Unauthorized (Invalid API Key)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "invalid-api-key-test"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_reff\": \"{{dynamic_merchant_reff}}\",\n  \"payment_method\": \"VA-MITRA\",\n  \"amount\": 10000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments"
+              ]
+            },
+            "description": "Verifies that requests with unregistered or invalid API keys are rejected with 401."
+          },
+          "response": []
+        },
+        {
+          "name": "Negative - Missing Required Fields (422/400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422 or 400 Validation Error', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bill_title\": \"Order Without Required Fields\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments"
+              ]
+            },
+            "description": "Validates that requests with missing mandatory fields are blocked by validation rules."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Payments (Query & Status)",
+      "description": "Endpoints for fetching payment transaction details and performing real-time status inquiry against Pay2U.",
+      "item": [
+        {
+          "name": "Get Payment by UUID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var data = jsonData.response_data || jsonData.data;",
+                  "pm.test('Returns payment details', function () {",
+                  "    pm.expect(data.id).to.eql(pm.environment.get('payment_id'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments/{{merchant_reff}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "{{merchant_reff}}"
+              ]
+            },
+            "description": "Fetches the stored payment record by merchant_reff (or fallback UUID)."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Payment Status (Sync Pay2U)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments/{{merchant_reff}}/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "{{merchant_reff}}",
+                "refresh"
+              ]
+            },
+            "description": "Actively queries the latest status from Pay2U via GetBill API and updates the local transaction record using merchant_reff."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Webhook Simulation",
+      "description": "Endpoints to simulate incoming callback notifications sent by Pay2U to Paygate in testing/sandbox environments.",
+      "item": [
+        {
+          "name": "Simulate Pay2U Callback (PAID / SUCCESS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Pay2U ACK response is rc: 00', function () {",
+                  "    pm.expect(jsonData.rc).to.eql('00');",
+                  "    pm.expect(jsonData.rd).to.eql('Sukses');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"PR4YUWNX7QCJPXJTATTD\",\n  \"merchant_reff\": \"{{merchant_reff}}\",\n  \"payment_method_code\": \"VA-MITRA\",\n  \"payment_code\": \"{{payment_code}}\",\n  \"payment_reff\": \"91915408\",\n  \"payment_date\": \"2026-09-23 15:09:32\",\n  \"bill_title\": \"Order Payment\",\n  \"bill_customer_name\": \"Budi Santoso\",\n  \"bill_currency\": \"IDR\",\n  \"amount\": 50000,\n  \"amount_admin\": 2500,\n  \"amount_discount\": 0,\n  \"amount_total\": 52500,\n  \"amount_paid\": 52500,\n  \"status\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments/callback/pay2u",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "callback",
+                "pay2u"
+              ]
+            },
+            "description": "Simulates real Pay2U webhook callback for successful transaction settlement (status: 1)."
+          },
+          "response": []
+        },
+        {
+          "name": "Simulate Pay2U Callback (REFUND)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Pay2U ACK response is rc: 00', function () {",
+                  "    pm.expect(jsonData.rc).to.eql('00');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"PR4YUWNX7QCJPXJTATTD\",\n  \"merchant_reff\": \"{{merchant_reff}}\",\n  \"payment_method_code\": \"VA-MITRA\",\n  \"payment_code\": \"{{payment_code}}\",\n  \"payment_reff\": \"PAYREFF-REFUND-91915408\",\n  \"payment_date\": \"2026-09-23 15:30:00\",\n  \"bill_title\": \"Order Payment\",\n  \"bill_customer_name\": \"Budi Santoso\",\n  \"bill_currency\": \"IDR\",\n  \"amount\": 50000,\n  \"amount_admin\": 2500,\n  \"amount_discount\": 0,\n  \"amount_total\": 52500,\n  \"amount_paid\": 52500,\n  \"status\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payments/callback/pay2u",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "callback",
+                "pay2u"
+              ]
+            },
+            "description": "Simulates real Pay2U webhook callback for refunded transaction (status: 3)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Merchant Management",
+      "description": "Admin endpoints for dynamic merchant onboarding, API key issuance, key rotation, and webhook configuration. Requires Master Admin Key.",
+      "item": [
+        {
+          "name": "Create Merchant (Localoka V2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var json = pm.response.json();",
+                  "var data = json.response_data || json.data;",
+                  "if (data && data.id) {",
+                  "    pm.environment.set('merchant_id', data.id);",
+                  "    pm.environment.set('merchant_api_key', data.api_key);",
+                  "    pm.environment.set('api_key', data.api_key);",
+                  "}",
+                  "if (data && data.code) {",
+                  "    pm.environment.set('merchant_code', data.code);",
+                  "}",
+                  "if (data && data.webhook_url) {",
+                  "    pm.environment.set('merchant_webhook_url', data.webhook_url);",
+                  "}",
+                  "if (data && data.webhook_secret) {",
+                  "    pm.environment.set('merchant_webhook_secret', data.webhook_secret);",
+                  "}",
+                  "if (data && data.api_key) {",
+                  "    pm.test('API Key has pg_localoka-v2_ prefix', function () {",
+                  "        pm.expect(data.api_key).to.match(/^pg_localoka-v2_/);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{master_api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Localoka V2\",\n  \"code\": \"localoka-v2\",\n  \"webhook_url\": \"https://localoka.co.id/api/payment/notification\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/merchants",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "merchants"
+              ]
+            },
+            "description": "Registers a new internal service / merchant. Automatically issues a secure API key with format `pg_[code]_[entropy]` and stores it to environment."
+          },
+          "response": []
+        },
+        {
+          "name": "List Merchants",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has standard page metadata', function () {",
+                  "    var json = pm.response.json();",
+                  "    var data = json.response_data || json;",
+                  "    pm.expect(data.paging).to.be.an('object');",
+                  "    pm.expect(data.paging.page).to.eql(1);",
+                  "    pm.expect(data.paging.per_page).to.eql(10);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{master_api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/merchants?page=1&per_page=10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "merchants"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "per_page",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Retrieves paginated list of registered merchants with standard PageMetadata envelope."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Merchant by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var json = pm.response.json();",
+                  "var data = json.response_data || json.data;",
+                  "pm.test('Returns correct merchant ID', function () {",
+                  "    pm.expect(data.id).to.eql(pm.environment.get('merchant_id'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{master_api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/merchants/{{merchant_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "merchants",
+                "{{merchant_id}}"
+              ]
+            },
+            "description": "Retrieves merchant profile details by UUID."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Merchant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{master_api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Localoka V2 Enterprise\",\n  \"webhook_url\": \"https://localoka.co.id/api/payment/webhook\",\n  \"is_active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/merchants/{{merchant_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "merchants",
+                "{{merchant_id}}"
+              ]
+            },
+            "description": "Updates merchant name, webhook callback URL, or active status."
+          },
+          "response": []
+        },
+        {
+          "name": "Rotate Merchant API Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var json = pm.response.json();",
+                  "var data = json.response_data || json.data;",
+                  "if (data && data.api_key) {",
+                  "    pm.environment.set('merchant_api_key', data.api_key);",
+                  "    pm.environment.set('api_key', data.api_key);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{master_api_key}}"
+              },
+              {
+                "key": "X-Request-Id",
+                "value": "{{dynamic_request_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/merchants/{{merchant_id}}/rotate-key",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "merchants",
+                "{{merchant_id}}",
+                "rotate-key"
+              ]
+            },
+            "description": "Immediately rotates merchant's API Key. The old key is invalidated instantly from Redis and PostgreSQL."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

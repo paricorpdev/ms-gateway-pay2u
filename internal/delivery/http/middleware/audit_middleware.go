@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"paygate/internal/audit"
@@ -19,8 +20,8 @@ func NewAuditMiddleware(worker *audit.AuditWorker) fiber.Handler {
 			return ctx.Next()
 		}
 
-		path := ctx.Path()
-		if path == "/health/live" || path == "/health/ready" || path == "/" {
+		path := strings.Clone(ctx.Path())
+		if !strings.HasPrefix(path, "/api/") {
 			return ctx.Next()
 		}
 
@@ -68,13 +69,13 @@ func NewAuditMiddleware(worker *audit.AuditWorker) fiber.Handler {
 			TransactionID:   txID,
 			SourceService:   sourceService,
 			Endpoint:        path,
-			Method:          ctx.Method(),
+			Method:          strings.Clone(ctx.Method()),
 			Headers:         entity.JSONB(headersJSON),
 			RequestPayload:  entity.JSONB(reqBody),
 			ResponseStatus:  ctx.Response().StatusCode(),
 			ResponsePayload: entity.JSONB(respBody),
 			LatencyMs:       time.Since(start).Milliseconds(),
-			IPAddress:       ctx.IP(),
+			IPAddress:       strings.Clone(ctx.IP()),
 			CreatedAt:       time.Now().UTC(),
 		}
 
