@@ -45,3 +45,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Postman
+*.postman_collection.json
+*.postman_environment.json
