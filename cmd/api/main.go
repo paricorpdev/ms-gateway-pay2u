@@ -69,6 +69,11 @@ func run() error {
 	container := bootstrap.NewContainer(deps)
 	bootstrap.HTTP(deps, container)
 
+	var stopEmbeddedWorker func(context.Context) error
+	if cfg.Worker.Enabled && cfg.Worker.Embedded {
+		stopEmbeddedWorker = bootstrap.StartEmbeddedWorker(context.Background(), deps, container)
+	}
+
 	serverErrors := make(chan error, 1)
 	go func() {
 		log.WithField("address", cfg.Web.Address()).Info("http server listening")
@@ -93,6 +98,12 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.App.ShutdownTimeout)
 	defer cancel()
+
+	if stopEmbeddedWorker != nil {
+		if err := stopEmbeddedWorker(shutdownCtx); err != nil {
+			log.WithError(err).Warn("embedded background worker shutdown did not drain cleanly before timeout")
+		}
+	}
 
 	if container.Dispatcher != nil {
 		if err := container.Dispatcher.Stop(shutdownCtx); err != nil {

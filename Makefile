@@ -1,4 +1,4 @@
-.PHONY: help config deps swagger run-api build fmt vet lint lint-fix check-golangci test cover vuln check migrate-create migrate-up migrate-down check-migrate docker-up docker-down docker-build
+.PHONY: help config deps swagger run-api run-worker build fmt vet lint lint-fix check-golangci test cover vuln check migrate-create migrate-up migrate-down check-migrate docker-up docker-down docker-build
 
 APP_NAME = paygate
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -24,9 +24,13 @@ swagger: ## Generate swagger documentation
 run-api: config ## Run the API server
 	go run -ldflags "$(LDFLAGS)" cmd/api/main.go
 
-build: ## Build the binary
+run-worker: config ## Run the background worker (auto-expiry & log retention)
+	go run -ldflags "$(LDFLAGS)" cmd/worker/main.go
+
+build: ## Build both API and worker binaries
 	mkdir -p bin
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS) -w -s" -o bin/$(APP_NAME) cmd/api/main.go
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS) -w -s" -o bin/$(APP_NAME)-worker cmd/worker/main.go
 
 fmt: ## Format source code
 	go fmt ./...

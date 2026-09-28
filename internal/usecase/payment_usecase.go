@@ -331,7 +331,7 @@ func (u *PaymentUseCase) triggerMerchantWebhook(ctx context.Context, tx *entity.
 	}
 
 	payloadMap := map[string]any{
-		"event":           entity.WebhookEventPaymentSuccess,
+		"event":           constants.WebhookEventPaymentSuccess,
 		"payment_id":      tx.ID.String(),
 		"merchant_reff":   tx.MerchantReff,
 		"payment_method":  tx.PaymentMethod,
@@ -357,9 +357,9 @@ func (u *PaymentUseCase) triggerMerchantWebhook(ctx context.Context, tx *entity.
 		TransactionID: tx.ID,
 		MerchantID:    merchant.ID,
 		TargetURL:     merchant.WebhookURL,
-		EventType:     entity.WebhookEventPaymentSuccess,
+		EventType:     constants.WebhookEventPaymentSuccess,
 		Payload:       entity.JSONB(payloadBytes),
-		Status:        entity.WebhookStatusPending,
+		Status:        constants.WebhookStatusPending,
 		Attempts:      0,
 		MaxAttempts:   3,
 	}

@@ -89,3 +89,16 @@ pay2u:
   timeout: "30s"
   oauth_token_ttl: "50m"
   callback_base_url: "http://localhost:8080"
+
+worker:
+  enabled: true
+  embedded: false # set true to run worker inside API process
+  shutdown_timeout: "15s"
+  expiry:
+    interval: "1m"
+    batch_size: 100
+  retention:
+    run_hour: 2 # 02:00 WIB
+    days: 30
+    batch_size: 1000
+

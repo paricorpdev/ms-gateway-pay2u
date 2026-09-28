@@ -24,7 +24,27 @@ type Config struct {
 	Log      LogConfig
 	Database DatabaseConfig
 	Pay2U    Pay2UConfig
+	Worker   WorkerConfig
 	APIKey   string
+}
+
+type WorkerConfig struct {
+	Enabled         bool
+	Embedded        bool
+	ShutdownTimeout time.Duration
+	Expiry          ExpiryWorkerConfig
+	Retention       RetentionWorkerConfig
+}
+
+type ExpiryWorkerConfig struct {
+	Interval  time.Duration
+	BatchSize int
+}
+
+type RetentionWorkerConfig struct {
+	RunHour   int
+	Days      int
+	BatchSize int
 }
 
 type AppConfig struct {
@@ -233,6 +253,15 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("pay2u.billing_get_url", "/service/core/trx/billing/get")
 	v.SetDefault("pay2u.timeout", "30s")
 	v.SetDefault("pay2u.oauth_token_ttl", "50m")
+
+	v.SetDefault("worker.enabled", true)
+	v.SetDefault("worker.embedded", false)
+	v.SetDefault("worker.shutdown_timeout", "15s")
+	v.SetDefault("worker.expiry.interval", "1m")
+	v.SetDefault("worker.expiry.batch_size", 100)
+	v.SetDefault("worker.retention.run_hour", 2)
+	v.SetDefault("worker.retention.days", 30)
+	v.SetDefault("worker.retention.batch_size", 1000)
 }
 
 func Load(v *viper.Viper) (*Config, error) {
@@ -320,6 +349,20 @@ func Load(v *viper.Viper) (*Config, error) {
 			Timeout:           v.GetDuration("pay2u.timeout"),
 			OAuthTokenTTL:     v.GetDuration("pay2u.oauth_token_ttl"),
 			CallbackBaseURL:   strings.TrimRight(v.GetString("pay2u.callback_base_url"), "/"),
+		},
+		Worker: WorkerConfig{
+			Enabled:         v.GetBool("worker.enabled"),
+			Embedded:        v.GetBool("worker.embedded"),
+			ShutdownTimeout: v.GetDuration("worker.shutdown_timeout"),
+			Expiry: ExpiryWorkerConfig{
+				Interval:  v.GetDuration("worker.expiry.interval"),
+				BatchSize: v.GetInt("worker.expiry.batch_size"),
+			},
+			Retention: RetentionWorkerConfig{
+				RunHour:   v.GetInt("worker.retention.run_hour"),
+				Days:      v.GetInt("worker.retention.days"),
+				BatchSize: v.GetInt("worker.retention.batch_size"),
+			},
 		},
 		APIKey: v.GetString("api_key"),
 	}

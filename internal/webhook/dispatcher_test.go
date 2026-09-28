@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"paygate/internal/common/constants"
 	"paygate/internal/entity"
 
 	"github.com/google/uuid"
@@ -111,6 +112,15 @@ func (r *inMemoryDispatchRepo) FindRecoverableDispatches(ctx context.Context, db
 	return res, nil
 }
 
+func (r *inMemoryDispatchRepo) DeleteDispatchesBefore(ctx context.Context, db *gorm.DB, cutoff time.Time, limit int) (int64, error) {
+	return 0, nil
+}
+
+func (r *inMemoryDispatchRepo) DeleteDispatchLogsBefore(ctx context.Context, db *gorm.DB, cutoff time.Time, limit int) (int64, error) {
+	return 0, nil
+}
+
+
 // 1. Policy Tests
 func TestPolicy_IsSuccess(t *testing.T) {
 	tests := []struct {
@@ -183,7 +193,7 @@ func TestPolicy_ParseRetryAfter(t *testing.T) {
 
 // 2. Signer Test
 func TestSigner_ComputeSignature(t *testing.T) {
-	payload := []byte(`{"event":"payment.success","amount":50000}`)
+	payload := []byte(`{"event":"` + constants.WebhookEventPaymentSuccess + `","amount":50000}`)
 	secret := "whsec_test_secret_123"
 
 	sig := ComputeSignature(payload, secret)
@@ -237,7 +247,7 @@ func TestDispatcher_Execute_Success2xx(t *testing.T) {
 			WebhookSecret: secret,
 		},
 		TargetURL:   server.URL,
-		EventType:   "payment.success",
+		EventType:   constants.WebhookEventPaymentSuccess,
 		Payload:     entity.JSONB(payload),
 		Status:      entity.WebhookStatusPending,
 		Attempts:    0,
@@ -298,7 +308,7 @@ func TestDispatcher_Execute_NonRetryable4xx(t *testing.T) {
 		TransactionID: uuid.New(),
 		MerchantID:    uuid.New(),
 		TargetURL:     server.URL,
-		EventType:     "payment.success",
+		EventType:     constants.WebhookEventPaymentSuccess,
 		Payload:       entity.JSONB(`{}`),
 		Status:        entity.WebhookStatusPending,
 		Attempts:      0,
@@ -344,7 +354,7 @@ func TestDispatcher_Execute_RetryableBackoffAndStop3x(t *testing.T) {
 		TransactionID: uuid.New(),
 		MerchantID:    uuid.New(),
 		TargetURL:     server.URL,
-		EventType:     "payment.success",
+		EventType:     constants.WebhookEventPaymentSuccess,
 		Payload:       entity.JSONB(`{}`),
 		Status:        entity.WebhookStatusPending,
 		Attempts:      0,

@@ -30,6 +30,15 @@ func (m *mockAuditRepo) SaveOutbound(ctx context.Context, log *entity.OutboundRe
 	return nil
 }
 
+func (m *mockAuditRepo) DeleteInboundBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockAuditRepo) DeleteOutboundBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	return 0, nil
+}
+
+
 func TestAuditMiddleware_FilterBotScanners(t *testing.T) {
 	repo := &mockAuditRepo{}
 	log := logrus.New()

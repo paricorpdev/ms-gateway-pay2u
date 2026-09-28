@@ -18,6 +18,7 @@ type TransactionRepository interface {
 	FindByMerchantReff(ctx context.Context, db *gorm.DB, reff string) (*entity.Transaction, error)
 	FindByProviderToken(ctx context.Context, db *gorm.DB, token string) (*entity.Transaction, error)
 	UpdateStatus(ctx context.Context, db *gorm.DB, id uuid.UUID, status string, updates map[string]any) error
+	ExpirePendingTransactions(ctx context.Context, db *gorm.DB, limit int) ([]*entity.Transaction, error)
 }
 
 type CacheRepository interface {
@@ -29,6 +30,8 @@ type CacheRepository interface {
 type AuditLogRepository interface {
 	SaveInbound(ctx context.Context, log *entity.InboundRequest) error
 	SaveOutbound(ctx context.Context, log *entity.OutboundRequest) error
+	DeleteInboundBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
+	DeleteOutboundBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 }
 
 type MerchantRepository interface {
@@ -47,6 +50,8 @@ type WebhookDispatchRepository interface {
 	CreateDispatchLog(ctx context.Context, db *gorm.DB, l *entity.WebhookDispatchLog) error
 	FindDispatchByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*entity.WebhookDispatch, error)
 	FindRecoverableDispatches(ctx context.Context, db *gorm.DB, limit int) ([]*entity.WebhookDispatch, error)
+	DeleteDispatchesBefore(ctx context.Context, db *gorm.DB, cutoff time.Time, limit int) (int64, error)
+	DeleteDispatchLogsBefore(ctx context.Context, db *gorm.DB, cutoff time.Time, limit int) (int64, error)
 }
 
 var (

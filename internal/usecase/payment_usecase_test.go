@@ -104,6 +104,11 @@ func (r *inMemoryTxRepo) UpdateStatus(ctx context.Context, db *gorm.DB, id uuid.
 	return nil
 }
 
+func (r *inMemoryTxRepo) ExpirePendingTransactions(ctx context.Context, db *gorm.DB, limit int) ([]*entity.Transaction, error) {
+	return nil, nil
+}
+
+
 type mockDispatcher struct {
 	mu       sync.Mutex
 	enqueued []uuid.UUID
@@ -157,6 +162,15 @@ func (r *inMemoryDispatchRepoForPaymentTest) FindDispatchByID(ctx context.Contex
 func (r *inMemoryDispatchRepoForPaymentTest) FindRecoverableDispatches(ctx context.Context, db *gorm.DB, limit int) ([]*entity.WebhookDispatch, error) {
 	return nil, nil
 }
+
+func (r *inMemoryDispatchRepoForPaymentTest) DeleteDispatchesBefore(ctx context.Context, db *gorm.DB, cutoff time.Time, limit int) (int64, error) {
+	return 0, nil
+}
+
+func (r *inMemoryDispatchRepoForPaymentTest) DeleteDispatchLogsBefore(ctx context.Context, db *gorm.DB, cutoff time.Time, limit int) (int64, error) {
+	return 0, nil
+}
+
 
 type mockProvider struct {
 	lastBillReq *provider.BillRequest

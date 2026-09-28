@@ -62,6 +62,15 @@ func (m *mockAuditRepo) SaveOutbound(ctx context.Context, log *entity.OutboundRe
 	return nil
 }
 
+func (m *mockAuditRepo) DeleteInboundBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockAuditRepo) DeleteOutboundBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
+	return 0, nil
+}
+
+
 func (m *mockAuditRepo) InboundCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()

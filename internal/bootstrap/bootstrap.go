@@ -35,16 +35,21 @@ type Dependencies struct {
 }
 
 type Container struct {
-	Payment     usecase.PaymentService
-	Merchant    usecase.MerchantService
-	AuditWorker *audit.AuditWorker
-	Dispatcher  webhook.Dispatcher
+	Payment      usecase.PaymentService
+	Merchant     usecase.MerchantService
+	AuditWorker  *audit.AuditWorker
+	Dispatcher   webhook.Dispatcher
+	TxRepo       repository.TransactionRepository
+	MerchantRepo repository.MerchantRepository
+	DispatchRepo repository.WebhookDispatchRepository
+	AuditRepo    repository.AuditLogRepository
 }
 
 func NewContainer(deps *Dependencies) *Container {
 	var auditWorker *audit.AuditWorker
+	var auditRepo repository.AuditLogRepository
 	if deps.DB != nil {
-		auditRepo := repository.NewAuditLogRepository(deps.DB)
+		auditRepo = repository.NewAuditLogRepository(deps.DB)
 		auditWorker = audit.NewWorker(auditRepo, deps.Log, 1000)
 	}
 
@@ -108,10 +113,14 @@ func NewContainer(deps *Dependencies) *Container {
 	)
 
 	return &Container{
-		Payment:     paymentUC,
-		Merchant:    merchantUC,
-		AuditWorker: auditWorker,
-		Dispatcher:  dispatcher,
+		Payment:      paymentUC,
+		Merchant:     merchantUC,
+		AuditWorker:  auditWorker,
+		Dispatcher:   dispatcher,
+		TxRepo:       txRepo,
+		MerchantRepo: merchantRepo,
+		DispatchRepo: dispatchRepo,
+		AuditRepo:    auditRepo,
 	}
 }
 

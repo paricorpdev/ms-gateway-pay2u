@@ -3,20 +3,22 @@ package entity
 import (
 	"time"
 
+	"paygate/internal/common/constants"
+
 	"github.com/google/uuid"
 )
 
 const (
-	WebhookStatusPending = "PENDING"
-	WebhookStatusSuccess = "SUCCESS"
-	WebhookStatusFailed  = "FAILED"
+	WebhookStatusPending = constants.TransactionStatusPending
+	WebhookStatusSuccess = constants.TransactionStatusSuccess
+	WebhookStatusFailed  = constants.TransactionStatusFailed
 )
 
 const (
-	WebhookEventPaymentSuccess = "payment.success"
-	WebhookEventPaymentFailed  = "payment.failed"
-	WebhookEventPaymentExpired = "payment.expired"
-	WebhookEventPaymentRefund  = "payment.refund"
+	WebhookEventPaymentSuccess = constants.WebhookEventPaymentSuccess
+	WebhookEventPaymentFailed  = constants.WebhookEventPaymentFailed
+	WebhookEventPaymentExpired = constants.WebhookEventPaymentExpired
+	WebhookEventPaymentRefund  = constants.WebhookEventPaymentRefund
 )
 
 type WebhookDispatch struct {

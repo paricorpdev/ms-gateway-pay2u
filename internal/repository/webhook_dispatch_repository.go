@@ -80,3 +80,38 @@ func (r *webhookDispatchRepository) FindRecoverableDispatches(ctx context.Contex
 
 	return list, err
 }
+
+func (r *webhookDispatchRepository) DeleteDispatchLogsBefore(ctx context.Context, db *gorm.DB, cutoff time.Time, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	query := `
+		DELETE FROM webhook_dispatch_logs
+		WHERE id IN (
+			SELECT id FROM webhook_dispatch_logs
+			WHERE dispatched_at < ?
+			ORDER BY dispatched_at ASC
+			LIMIT ?
+		)
+	`
+	res := db.WithContext(ctx).Exec(query, cutoff, limit)
+	return res.RowsAffected, res.Error
+}
+
+func (r *webhookDispatchRepository) DeleteDispatchesBefore(ctx context.Context, db *gorm.DB, cutoff time.Time, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	query := `
+		DELETE FROM webhook_dispatches
+		WHERE id IN (
+			SELECT id FROM webhook_dispatches
+			WHERE status IN ('SUCCESS', 'FAILED')
+			  AND created_at < ?
+			ORDER BY created_at ASC
+			LIMIT ?
+		)
+	`
+	res := db.WithContext(ctx).Exec(query, cutoff, limit)
+	return res.RowsAffected, res.Error
+}

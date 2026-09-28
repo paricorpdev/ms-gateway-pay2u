@@ -76,3 +76,28 @@ func (r *transactionRepository) UpdateStatus(ctx context.Context, db *gorm.DB, i
 	updates["status"] = status
 	return db.WithContext(ctx).Model(&entity.Transaction{}).Where("id = ?", id).Updates(updates).Error
 }
+
+func (r *transactionRepository) ExpirePendingTransactions(ctx context.Context, db *gorm.DB, limit int) ([]*entity.Transaction, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var expired []*entity.Transaction
+	query := `
+		UPDATE transactions
+		SET status = 'EXPIRED', updated_at = NOW()
+		WHERE id IN (
+			SELECT id FROM transactions
+			WHERE status = 'PENDING'
+			  AND expired_at IS NOT NULL
+			  AND expired_at < NOW()
+			ORDER BY expired_at ASC
+			LIMIT ?
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING *
+	`
+	if err := db.WithContext(ctx).Raw(query, limit).Scan(&expired).Error; err != nil {
+		return nil, err
+	}
+	return expired, nil
+}
