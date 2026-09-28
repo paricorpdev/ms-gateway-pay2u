@@ -175,6 +175,7 @@ func (r *inMemoryDispatchRepoForPaymentTest) DeleteDispatchLogsBefore(ctx contex
 type mockProvider struct {
 	lastBillReq *provider.BillRequest
 	billResult  *provider.BillResult
+	callbackRes *provider.CallbackResult
 }
 
 func (m *mockProvider) Name() string { return "pay2u" }
@@ -189,6 +190,9 @@ func (m *mockProvider) GetBill(ctx context.Context, token, methodCode string) (*
 }
 
 func (m *mockProvider) ParseCallback(body []byte) (*provider.CallbackResult, error) {
+	if m.callbackRes != nil {
+		return m.callbackRes, nil
+	}
 	return &provider.CallbackResult{
 		MerchantReff:  "INV-2026-0001",
 		ProviderToken: "TOKEN-MOCK-123",
@@ -735,6 +739,297 @@ func TestPaymentUseCase_CreatePayment_OverwritesMerchantAdminFee(t *testing.T) {
 	}
 	if mockProv.lastBillReq.AmountTotal != 52500 {
 		t.Errorf("expected provider AmountTotal 52500, got %d", mockProv.lastBillReq.AmountTotal)
+	}
+}
+
+func TestPaymentUseCase_HandleCallback_RefundFromSuccess(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	mockProv := &mockProvider{
+		billResult: &provider.BillResult{Token: "TOKEN-MOCK-REFUND"},
+	}
+	val := validator.New()
+	merchantRepo := newInMemoryMerchantRepo()
+	dispatchRepo := newInMemoryDispatchRepoForPaymentTest()
+	dispatcher := &mockDispatcher{}
+
+	merchantID := uuid.New()
+	merchant := &entity.Merchant{
+		ID:         merchantID,
+		Code:       "M-REFUND",
+		Name:       "Refund Merchant",
+		IsActive:   true,
+		WebhookURL: "https://merchant.example.com/webhook",
+	}
+	_ = merchantRepo.Create(context.Background(), nil, merchant)
+
+	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv})
+
+	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
+	req := &payload.CreatePaymentRequest{
+		MerchantReff:  "INV-REFUND-001",
+		PaymentMethod: "VA-MITRA",
+		BillTitle:     "Refund Test Order",
+		CustomerName:  "Eldiva",
+		CustomerPhone: "081234567890",
+		Amount:        100000,
+		AmountTotal:   100000,
+	}
+
+	res, err := uc.CreatePayment(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error creating payment: %v", err)
+	}
+
+	// 1. Initial Callback: Status 1 (SUCCESS)
+	mockProv.callbackRes = &provider.CallbackResult{
+		MerchantReff:  "INV-REFUND-001",
+		ProviderToken: "TOKEN-MOCK-REFUND",
+		PaymentReff:   "PAYREFF-SUCCESS-1",
+		PaymentDate:   "2026-09-28 10:00:00",
+		Status:        1,
+	}
+	if err := uc.HandleCallback(ctx, "pay2u", []byte(`{"status":1}`)); err != nil {
+		t.Fatalf("unexpected error handling success callback: %v", err)
+	}
+
+	txID, _ := uuid.Parse(res.ID)
+	tx, _ := repo.FindByID(ctx, nil, txID)
+	if tx.Status != constants.TransactionStatusSuccess {
+		t.Fatalf("expected status SUCCESS, got %s", tx.Status)
+	}
+	if len(dispatcher.enqueued) != 1 {
+		t.Fatalf("expected 1 enqueued dispatch for success, got %d", len(dispatcher.enqueued))
+	}
+
+	// 2. Subsequent Callback: Status 3 (REFUND)
+	mockProv.callbackRes = &provider.CallbackResult{
+		MerchantReff:  "INV-REFUND-001",
+		ProviderToken: "TOKEN-MOCK-REFUND",
+		PaymentReff:   "PAYREFF-REFUND-99",
+		PaymentDate:   "2026-09-28 11:00:00",
+		Status:        3,
+	}
+	if err := uc.HandleCallback(ctx, "pay2u", []byte(`{"status":3}`)); err != nil {
+		t.Fatalf("unexpected error handling refund callback: %v", err)
+	}
+
+	tx, _ = repo.FindByID(ctx, nil, txID)
+	if tx.Status != constants.TransactionStatusRefund {
+		t.Fatalf("expected status REFUND, got %s", tx.Status)
+	}
+	if tx.PaymentReff != "PAYREFF-REFUND-99" {
+		t.Errorf("expected updated payment_reff PAYREFF-REFUND-99, got %s", tx.PaymentReff)
+	}
+
+	// Webhook should now have 2 enqueued dispatches (1 success, 1 refund)
+	if len(dispatcher.enqueued) != 2 {
+		t.Fatalf("expected 2 enqueued dispatches, got %d", len(dispatcher.enqueued))
+	}
+
+	refundDispatchID := dispatcher.enqueued[1]
+	refundDispatch, err := dispatchRepo.FindDispatchByID(ctx, nil, refundDispatchID)
+	if err != nil || refundDispatch == nil {
+		t.Fatalf("failed to find refund dispatch: %v", err)
+	}
+	if refundDispatch.EventType != constants.WebhookEventPaymentRefund {
+		t.Errorf("expected EventType %q, got %q", constants.WebhookEventPaymentRefund, refundDispatch.EventType)
+	}
+}
+
+func TestPaymentUseCase_HandleCallback_Idempotency(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	mockProv := &mockProvider{
+		billResult: &provider.BillResult{Token: "TOKEN-IDEM"},
+	}
+	val := validator.New()
+	merchantRepo := newInMemoryMerchantRepo()
+	dispatchRepo := newInMemoryDispatchRepoForPaymentTest()
+	dispatcher := &mockDispatcher{}
+
+	merchantID := uuid.New()
+	merchant := &entity.Merchant{
+		ID:         merchantID,
+		Code:       "M-IDEM",
+		Name:       "Idempotent Merchant",
+		IsActive:   true,
+		WebhookURL: "https://merchant.example.com/webhook",
+	}
+	_ = merchantRepo.Create(context.Background(), nil, merchant)
+
+	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv})
+
+	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
+	req := &payload.CreatePaymentRequest{
+		MerchantReff:  "INV-IDEM-001",
+		PaymentMethod: "VA-MITRA",
+		BillTitle:     "Idempotent Test",
+		CustomerName:  "Eldiva",
+		CustomerPhone: "081234567890",
+		Amount:        50000,
+		AmountTotal:   50000,
+	}
+
+	_, err := uc.CreatePayment(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error creating payment: %v", err)
+	}
+
+	mockProv.callbackRes = &provider.CallbackResult{
+		MerchantReff:  "INV-IDEM-001",
+		ProviderToken: "TOKEN-IDEM",
+		Status:        1,
+	}
+
+	// 1st callback -> triggers 1 dispatch
+	if err := uc.HandleCallback(ctx, "pay2u", []byte(`{}`)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(dispatcher.enqueued) != 1 {
+		t.Fatalf("expected 1 dispatch, got %d", len(dispatcher.enqueued))
+	}
+
+	// 2nd duplicate callback -> must be ignored (idempotent)
+	if err := uc.HandleCallback(ctx, "pay2u", []byte(`{}`)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(dispatcher.enqueued) != 1 {
+		t.Fatalf("expected still 1 dispatch after duplicate callback, got %d", len(dispatcher.enqueued))
+	}
+}
+
+func TestPaymentUseCase_HandleCallback_LatePaymentFromExpired(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	mockProv := &mockProvider{
+		billResult: &provider.BillResult{Token: "TOKEN-LATE"},
+	}
+	val := validator.New()
+	merchantRepo := newInMemoryMerchantRepo()
+	dispatchRepo := newInMemoryDispatchRepoForPaymentTest()
+	dispatcher := &mockDispatcher{}
+
+	merchantID := uuid.New()
+	merchant := &entity.Merchant{
+		ID:         merchantID,
+		Code:       "M-LATE",
+		Name:       "Late Merchant",
+		IsActive:   true,
+		WebhookURL: "https://merchant.example.com/webhook",
+	}
+	_ = merchantRepo.Create(context.Background(), nil, merchant)
+
+	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv})
+
+	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
+	req := &payload.CreatePaymentRequest{
+		MerchantReff:  "INV-LATE-001",
+		PaymentMethod: "VA-MITRA",
+		BillTitle:     "Late Payment Test",
+		CustomerName:  "Eldiva",
+		CustomerPhone: "081234567890",
+		Amount:        60000,
+		AmountTotal:   60000,
+	}
+
+	res, err := uc.CreatePayment(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error creating payment: %v", err)
+	}
+
+	txID, _ := uuid.Parse(res.ID)
+	// Manually simulate transaction marked as EXPIRED by background worker
+	tx, _ := repo.FindByID(ctx, nil, txID)
+	tx.Status = constants.TransactionStatusExpired
+
+	// Callback status 1 arrives from Pay2U
+	mockProv.callbackRes = &provider.CallbackResult{
+		MerchantReff:  "INV-LATE-001",
+		ProviderToken: "TOKEN-LATE",
+		PaymentReff:   "PAYREFF-LATE-99",
+		Status:        1,
+	}
+
+	if err := uc.HandleCallback(ctx, "pay2u", []byte(`{}`)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	tx, _ = repo.FindByID(ctx, nil, txID)
+	if tx.Status != constants.TransactionStatusSuccess {
+		t.Fatalf("expected EXPIRED transaction to transition to SUCCESS on payment callback, got %s", tx.Status)
+	}
+	if len(dispatcher.enqueued) != 1 {
+		t.Fatalf("expected 1 webhook dispatch enqueued, got %d", len(dispatcher.enqueued))
+	}
+}
+
+func TestPaymentUseCase_RefreshPayment_RefundDetection(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	mockProv := &mockProvider{
+		billResult: &provider.BillResult{
+			Token:        "TOKEN-REFRESH-REFUND",
+			MerchantReff: "INV-REFRESH-001",
+			Status:       3, // Pay2U reports refund
+			PaymentReff:  "PAYREFF-REFUND-INQUIRY",
+		},
+	}
+	val := validator.New()
+	merchantRepo := newInMemoryMerchantRepo()
+	dispatchRepo := newInMemoryDispatchRepoForPaymentTest()
+	dispatcher := &mockDispatcher{}
+
+	merchantID := uuid.New()
+	merchant := &entity.Merchant{
+		ID:         merchantID,
+		Code:       "M-REFRESH-REFUND",
+		Name:       "Refresh Refund Merchant",
+		IsActive:   true,
+		WebhookURL: "https://merchant.example.com/webhook",
+	}
+	_ = merchantRepo.Create(context.Background(), nil, merchant)
+
+	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv})
+
+	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
+	req := &payload.CreatePaymentRequest{
+		MerchantReff:  "INV-REFRESH-001",
+		PaymentMethod: "VA-MITRA",
+		BillTitle:     "Refresh Refund Test",
+		CustomerName:  "Eldiva",
+		CustomerPhone: "081234567890",
+		Amount:        45000,
+		AmountTotal:   45000,
+	}
+
+	res, err := uc.CreatePayment(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error creating payment: %v", err)
+	}
+
+	// Transaction initially SUCCESS
+	txID, _ := uuid.Parse(res.ID)
+	tx, _ := repo.FindByID(ctx, nil, txID)
+	tx.Status = constants.TransactionStatusSuccess
+
+	// Refresh payment calls GetBill -> reports status 3 -> triggers refund update
+	resp, err := uc.RefreshPayment(ctx, "INV-REFRESH-001")
+	if err != nil {
+		t.Fatalf("unexpected error on refresh payment: %v", err)
+	}
+
+	if resp.Status != constants.TransactionStatusRefund {
+		t.Fatalf("expected refreshed status REFUND, got %s", resp.Status)
+	}
+
+	tx, _ = repo.FindByID(ctx, nil, txID)
+	if tx.Status != constants.TransactionStatusRefund {
+		t.Fatalf("expected db status REFUND, got %s", tx.Status)
+	}
+
+	if len(dispatcher.enqueued) != 1 {
+		t.Fatalf("expected 1 webhook dispatch for refund, got %d", len(dispatcher.enqueued))
+	}
+	dispatch, _ := dispatchRepo.FindDispatchByID(ctx, nil, dispatcher.enqueued[0])
+	if dispatch.EventType != constants.WebhookEventPaymentRefund {
+		t.Errorf("expected EventType %q, got %q", constants.WebhookEventPaymentRefund, dispatch.EventType)
 	}
 }
 

@@ -217,6 +217,15 @@ func (u *PaymentUseCase) RefreshPayment(ctx context.Context, identifier string) 
 
 	newStatus := mapProviderStatus(res.Status)
 	if newStatus != tx.Status {
+		// Valid state transitions for RefreshPayment:
+		// Do not downgrade terminal states unless transitioning to REFUND
+		if tx.Status == constants.TransactionStatusRefund {
+			return converter.ToPaymentResponse(tx), nil
+		}
+		if tx.Status == constants.TransactionStatusSuccess && newStatus != constants.TransactionStatusRefund {
+			return converter.ToPaymentResponse(tx), nil
+		}
+
 		updates := map[string]any{
 			"status": newStatus,
 		}
@@ -241,7 +250,9 @@ func (u *PaymentUseCase) RefreshPayment(ctx context.Context, identifier string) 
 		tx.Status = newStatus
 
 		if newStatus == constants.TransactionStatusSuccess {
-			u.triggerMerchantWebhook(ctx, tx, tx.PaymentReff, paidAt)
+			u.triggerMerchantWebhook(ctx, tx, constants.WebhookEventPaymentSuccess, tx.PaymentReff)
+		} else if newStatus == constants.TransactionStatusRefund {
+			u.triggerMerchantWebhook(ctx, tx, constants.WebhookEventPaymentRefund, tx.PaymentReff)
 		}
 	} else if newStatus == constants.TransactionStatusSuccess {
 		updates := make(map[string]any)
@@ -288,35 +299,60 @@ func (u *PaymentUseCase) HandleCallback(ctx context.Context, providerName string
 		return exception.NotFound(fmt.Sprintf("transaction with reff %s not found", cb.MerchantReff))
 	}
 
-	if tx.Status == constants.TransactionStatusSuccess {
+	newStatus := mapProviderStatus(cb.Status)
+
+	if tx.Status == newStatus {
 		return nil
 	}
 
-	newStatus := mapProviderStatus(cb.Status)
+	// Transaction already REFUND -> terminal, ignore further transitions
+	if tx.Status == constants.TransactionStatusRefund {
+		return nil
+	}
+
+	// Transaction already SUCCESS -> only allow transition to REFUND
+	if tx.Status == constants.TransactionStatusSuccess && newStatus != constants.TransactionStatusRefund {
+		return nil
+	}
+
 	updates := map[string]any{
 		"provider_callback": entity.JSONB(rawBody),
 	}
 	if cb.PaymentReff != "" {
 		updates["payment_reff"] = cb.PaymentReff
+		tx.PaymentReff = cb.PaymentReff
 	}
-	var paidAt time.Time
+
+	var eventTime time.Time
+	if cb.PaymentDate != "" {
+		if t, err := time.ParseInLocation("2006-01-02 15:04:05", cb.PaymentDate, time.Local); err == nil {
+			eventTime = t
+		}
+	}
+	if eventTime.IsZero() {
+		eventTime = time.Now()
+	}
+
 	if newStatus == constants.TransactionStatusSuccess {
-		paidAt = time.Now()
-		updates["paid_at"] = &paidAt
+		updates["paid_at"] = &eventTime
+		tx.PaidAt = &eventTime
 	}
 
 	if err := u.txRepo.UpdateStatus(ctx, u.db, tx.ID, newStatus, updates); err != nil {
 		return err
 	}
+	tx.Status = newStatus
 
 	if newStatus == constants.TransactionStatusSuccess {
-		u.triggerMerchantWebhook(ctx, tx, cb.PaymentReff, paidAt)
+		u.triggerMerchantWebhook(ctx, tx, constants.WebhookEventPaymentSuccess, cb.PaymentReff)
+	} else if newStatus == constants.TransactionStatusRefund {
+		u.triggerMerchantWebhook(ctx, tx, constants.WebhookEventPaymentRefund, cb.PaymentReff)
 	}
 
 	return nil
 }
 
-func (u *PaymentUseCase) triggerMerchantWebhook(ctx context.Context, tx *entity.Transaction, paymentReff string, paidAt time.Time) {
+func (u *PaymentUseCase) triggerMerchantWebhook(ctx context.Context, tx *entity.Transaction, eventType, paymentReff string) {
 	if u.dispatcher == nil || u.dispatchRepo == nil || u.merchantRepo == nil || tx.MerchantID == nil {
 		return
 	}
@@ -326,12 +362,8 @@ func (u *PaymentUseCase) triggerMerchantWebhook(ctx context.Context, tx *entity.
 		return
 	}
 
-	if paidAt.IsZero() {
-		paidAt = time.Now()
-	}
-
 	payloadMap := map[string]any{
-		"event":           constants.WebhookEventPaymentSuccess,
+		"event":           eventType,
 		"payment_id":      tx.ID.String(),
 		"merchant_reff":   tx.MerchantReff,
 		"payment_method":  tx.PaymentMethod,
@@ -341,9 +373,12 @@ func (u *PaymentUseCase) triggerMerchantWebhook(ctx context.Context, tx *entity.
 		"amount_discount": tx.AmountDiscount,
 		"amount_total":    tx.AmountTotal,
 		"currency":        tx.Currency,
-		"status":          constants.TransactionStatusSuccess,
-		"paid_at":         paidAt.Format(time.RFC3339),
+		"status":          tx.Status,
 		"payment_reff":    paymentReff,
+	}
+
+	if tx.PaidAt != nil {
+		payloadMap["paid_at"] = tx.PaidAt.Format(time.RFC3339)
 	}
 
 	payloadBytes, err := json.Marshal(payloadMap)
@@ -357,7 +392,7 @@ func (u *PaymentUseCase) triggerMerchantWebhook(ctx context.Context, tx *entity.
 		TransactionID: tx.ID,
 		MerchantID:    merchant.ID,
 		TargetURL:     merchant.WebhookURL,
-		EventType:     constants.WebhookEventPaymentSuccess,
+		EventType:     eventType,
 		Payload:       entity.JSONB(payloadBytes),
 		Status:        constants.WebhookStatusPending,
 		Attempts:      0,
