@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	"paygate/internal/common/constants"
 	"paygate/internal/provider"
+	"paygate/internal/utils"
 )
 
 type Provider struct {
@@ -23,6 +25,29 @@ func (p *Provider) Name() string {
 	return "pay2u"
 }
 
+func (p *Provider) resolveProviderMethod(paygateMethod string) string {
+	method := utils.NormalizePaymentMethod(paygateMethod)
+	switch method {
+	case constants.PaymentMethodQRIS:
+		return constants.Pay2UMethodQRIS
+	case constants.PaymentMethodCC:
+		return constants.Pay2UMethodCC
+	case constants.PaymentMethodVA,
+		constants.PaymentMethodVABRI,
+		constants.PaymentMethodVABNI,
+		constants.PaymentMethodVAMandiri,
+		constants.PaymentMethodVABCA,
+		constants.PaymentMethodVAPermata,
+		constants.PaymentMethodVACIMB,
+		constants.PaymentMethodVABSI,
+		constants.PaymentMethodVABTN,
+		constants.PaymentMethodVADanamon:
+		return constants.Pay2UMethodVA
+	default:
+		return method
+	}
+}
+
 func (p *Provider) resolveListenerURL(reqCallbackURL string) string {
 	if p.client != nil && p.client.config.CallbackBaseURL != "" {
 		return fmt.Sprintf("%s/api/v1/payments/callback/pay2u", strings.TrimRight(p.client.config.CallbackBaseURL, "/"))
@@ -31,11 +56,12 @@ func (p *Provider) resolveListenerURL(reqCallbackURL string) string {
 }
 
 func (p *Provider) CreateBill(ctx context.Context, req *provider.BillRequest) (*provider.BillResult, error) {
-	billingURL := p.getBillingURL(req.PaymentMethodCode)
+	providerMethod := p.resolveProviderMethod(req.PaymentMethodCode)
+	billingURL := p.getBillingURL(providerMethod)
 
 	submitReq := &SubmitBillRequest{
 		MerchantReff:        req.MerchantReff,
-		PaymentMethodCode:   req.PaymentMethodCode,
+		PaymentMethodCode:   providerMethod,
 		URLListenerMerchant: p.resolveListenerURL(req.CallbackURL),
 		URLRedirectMerchant: req.RedirectURL,
 		BillTitle:           req.BillTitle,
@@ -59,7 +85,7 @@ func (p *Provider) CreateBill(ctx context.Context, req *provider.BillRequest) (*
 	return &provider.BillResult{
 		Token:             res.Token,
 		MerchantReff:      res.MerchantReff,
-		PaymentMethodCode: res.PaymentMethodCode,
+		PaymentMethodCode: req.PaymentMethodCode,
 		PaymentCode:       res.PaymentCode,
 		AmountTotal:       int64(res.AmountTotal),
 		ExpiredMinutes:    res.ExpiredMinutes,
@@ -68,7 +94,8 @@ func (p *Provider) CreateBill(ctx context.Context, req *provider.BillRequest) (*
 }
 
 func (p *Provider) GetBill(ctx context.Context, token, methodCode string) (*provider.BillResult, error) {
-	res, err := p.client.GetBill(ctx, token, methodCode)
+	providerMethod := p.resolveProviderMethod(methodCode)
+	res, err := p.client.GetBill(ctx, token, providerMethod)
 	if err != nil {
 		return nil, err
 	}

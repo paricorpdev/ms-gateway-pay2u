@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"paygate/internal/utils"
 	"testing"
 	"time"
 )
@@ -165,6 +166,97 @@ func TestGetBill_ParsePaymentsArray(t *testing.T) {
 	}
 	if res.PaymentDate != "2026-09-24 11:25:01" {
 		t.Errorf("expected PaymentDate '2026-09-24 11:25:01', got %q", res.PaymentDate)
+	}
+}
+
+func TestResolveProviderMethod(t *testing.T) {
+	p := NewProvider(nil)
+
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"QRIS", "QRIS-MITRA"},
+		{"qris", "QRIS-MITRA"},
+		{"CC", "CC-MITRA"},
+		{"cc", "CC-MITRA"},
+		{"VA", "VA-MITRA"},
+		{"va", "VA-MITRA"},
+		{"VA_BRI", "BRIVA-MITRA"},
+		{"va_bri", "BRIVA-MITRA"},
+		{"VA_BNI", "BNIVA-MITRA"},
+		{"va_bni", "BNIVA-MITRA"},
+		{"VA_MANDIRI", "VA-MITRA"},
+		{"VA_BCA", "VA-MITRA"},
+		// Pass-through if already Pay2U code
+		{"BRIVA-MITRA", "BRIVA-MITRA"},
+		{"BNIVA-MITRA", "BNIVA-MITRA"},
+		{"QRIS-MITRA", "QRIS-MITRA"},
+		{"CC-MITRA", "CC-MITRA"},
+		{"VA-MITRA", "VA-MITRA"},
+	}
+
+	for _, tt := range tests {
+		actual := p.resolveProviderMethod(tt.input)
+		if actual != tt.expected {
+			t.Errorf("resolveProviderMethod(%q) = %q; want %q", tt.input, actual, tt.expected)
+		}
+	}
+}
+
+func TestNormalizePaymentMethod(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"  qris  ", "QRIS"},
+		{"qris", "QRIS"},
+		{"va", "VA"},
+		{"cc", "CC"},
+		{"va_bri", "VA_BRI"},
+		{"  va_mandiri  ", "VA_MANDIRI"},
+	}
+
+	for _, tt := range tests {
+		actual := utils.NormalizePaymentMethod(tt.input)
+		if actual != tt.expected {
+			t.Errorf("NormalizePaymentMethod(%q) = %q; want %q", tt.input, actual, tt.expected)
+		}
+	}
+}
+
+func TestIsValidPaymentMethod(t *testing.T) {
+	valid := []string{
+		"QRIS", "qris", "  qris  ",
+		"CC", "cc",
+		"VA", "va",
+		"VA_BRI", "va_bri",
+		"VA_BNI", "va_bni",
+		"VA_MANDIRI", "va_mandiri",
+		"VA_BCA", "va_bca",
+		"VA_PERMATA", "va_permata",
+		"VA_CIMB", "va_cimb",
+		"VA_BSI", "va_bsi",
+		"VA_BTN", "va_btn",
+		"VA_DANAMON", "va_danamon",
+	}
+
+	for _, m := range valid {
+		if !utils.IsValidPaymentMethod(m) {
+			t.Errorf("expected IsValidPaymentMethod(%q) to be true", m)
+		}
+	}
+
+	invalid := []string{
+		"", "   ", "BITCOIN", "PAYPAL", "GOPAY",
+		"QRIS-MITRA", "VA-MITRA", "CC-MITRA", "BRIVA-MITRA", "BNIVA-MITRA",
+		"BRI", "BNI", "MANDIRI", "BCA",
+	}
+
+	for _, m := range invalid {
+		if utils.IsValidPaymentMethod(m) {
+			t.Errorf("expected IsValidPaymentMethod(%q) to be false", m)
+		}
 	}
 }
 

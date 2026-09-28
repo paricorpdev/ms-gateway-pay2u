@@ -1,6 +1,16 @@
 package payload
 
-import "time"
+import (
+	"time"
+
+	"paygate/internal/config"
+	"paygate/internal/exception"
+	"paygate/internal/utils"
+
+	"github.com/go-playground/validator/v10"
+)
+
+var payloadValidator = config.NewValidator()
 
 // CreatePaymentRequest is the incoming request from internal services.
 type CreatePaymentRequest struct {
@@ -17,6 +27,22 @@ type CreatePaymentRequest struct {
 	AmountTotal     int64  `json:"amount_total,omitempty" validate:"omitempty,gte=0"`
 	ExpiredMinutes  int    `json:"expired_minutes" validate:"gte=0"`
 	RedirectURL     string `json:"redirect_url" validate:"omitempty,url"`
+}
+
+// Validate validates the request fields using struct tags.
+func (r *CreatePaymentRequest) Validate(v ...*validator.Validate) error {
+	val := payloadValidator
+	if len(v) > 0 && v[0] != nil {
+		val = v[0]
+	}
+
+	r.PaymentMethod = utils.NormalizePaymentMethod(r.PaymentMethod)
+
+	if err := val.Struct(r); err != nil {
+		return exception.FromValidation(err)
+	}
+
+	return nil
 }
 
 // PaymentResponse is returned after creating or querying a payment.

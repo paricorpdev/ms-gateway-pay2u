@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -200,6 +202,22 @@ func (m *mockProvider) ParseCallback(body []byte) (*provider.CallbackResult, err
 	}, nil
 }
 
+func (m *mockProvider) NormalizePaymentMethod(method string) string {
+	return strings.ToUpper(strings.TrimSpace(method))
+}
+
+func (m *mockProvider) IsValidPaymentMethod(method string) bool {
+	switch m.NormalizePaymentMethod(method) {
+	case constants.PaymentMethodQRIS, constants.PaymentMethodCC, constants.PaymentMethodVA,
+		constants.PaymentMethodVABRI, constants.PaymentMethodVABNI, constants.PaymentMethodVAMandiri,
+		constants.PaymentMethodVABCA, constants.PaymentMethodVAPermata, constants.PaymentMethodVACIMB,
+		constants.PaymentMethodVABSI, constants.PaymentMethodVABTN, constants.PaymentMethodVADanamon:
+		return true
+	default:
+		return false
+	}
+}
+
 func TestPaymentUseCase_CreatePayment_Success(t *testing.T) {
 	repo := newInMemoryTxRepo()
 	mockProv := &mockProvider{
@@ -215,7 +233,7 @@ func TestPaymentUseCase_CreatePayment_Success(t *testing.T) {
 	ctx := context.Background()
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:   "INV-2026-0001",
-		PaymentMethod:  "VA-MITRA",
+		PaymentMethod:  constants.PaymentMethodVA,
 		BillTitle:      "Order 1001",
 		CustomerName:   "Budi Santoso",
 		CustomerPhone:  "081234567890",
@@ -240,7 +258,7 @@ func TestPaymentUseCase_CreatePayment_Success(t *testing.T) {
 	}
 }
 
-func TestPaymentUseCase_CreatePayment_MissingMerchantReff(t *testing.T) {
+func TestPaymentUseCase_CreatePayment_AutoGeneratesMerchantReffWhenEmpty(t *testing.T) {
 	repo := newInMemoryTxRepo()
 	mockProv := &mockProvider{billResult: &provider.BillResult{Token: "TOKEN-MOCK"}}
 	val := validator.New()
@@ -248,8 +266,8 @@ func TestPaymentUseCase_CreatePayment_MissingMerchantReff(t *testing.T) {
 
 	ctx := context.Background()
 	req := &payload.CreatePaymentRequest{
-		// MerchantReff omitted
-		PaymentMethod: "VA-MITRA",
+		// MerchantReff omitted -> usecase auto-generates
+		PaymentMethod: constants.PaymentMethodVA,
 		BillTitle:     "Order 1002",
 		CustomerName:  "Budi",
 		CustomerPhone: "081234567890",
@@ -257,9 +275,12 @@ func TestPaymentUseCase_CreatePayment_MissingMerchantReff(t *testing.T) {
 		AmountTotal:   50000,
 	}
 
-	_, err := uc.CreatePayment(ctx, req)
-	if err == nil {
-		t.Fatal("expected validation error when merchant_reff is missing, got nil")
+	res, err := uc.CreatePayment(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error creating payment: %v", err)
+	}
+	if res.MerchantReff == "" || res.MerchantReff[0] != 'X' {
+		t.Errorf("expected auto-generated MerchantReff starting with X, got %q", res.MerchantReff)
 	}
 }
 
@@ -272,7 +293,7 @@ func TestPaymentUseCase_CreatePayment_DuplicateMerchantReff(t *testing.T) {
 	ctx1 := logger.WithRequestID(context.Background(), "req-001")
 	req1 := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-DUP-TEST",
-		PaymentMethod: "VA-MITRA",
+		PaymentMethod: constants.PaymentMethodVA,
 		BillTitle:     "Order 1",
 		CustomerName:  "Budi",
 		CustomerPhone: "081234567890",
@@ -289,7 +310,7 @@ func TestPaymentUseCase_CreatePayment_DuplicateMerchantReff(t *testing.T) {
 	ctx2 := logger.WithRequestID(context.Background(), "req-002")
 	req2 := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-DUP-TEST",
-		PaymentMethod: "VA-MITRA",
+		PaymentMethod: constants.PaymentMethodVA,
 		BillTitle:     "Order 2",
 		CustomerName:  "Siti",
 		CustomerPhone: "081234567891",
@@ -320,7 +341,7 @@ func TestPaymentUseCase_CreatePayment_ReplayByRequestID(t *testing.T) {
 	ctx := logger.WithRequestID(context.Background(), "req-replay-same-123")
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-REPLAY-1",
-		PaymentMethod: "VA-MITRA",
+		PaymentMethod: constants.PaymentMethodVA,
 		BillTitle:     "Order Same",
 		CustomerName:  "Budi",
 		CustomerPhone: "081234567890",
@@ -356,7 +377,7 @@ func TestPaymentUseCase_HandleCallback(t *testing.T) {
 	ctx := context.Background()
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-2026-0001",
-		PaymentMethod: "VA-MITRA",
+		PaymentMethod: constants.PaymentMethodVA,
 		BillTitle:     "Order Callback",
 		CustomerName:  "Budi",
 		CustomerPhone: "081234567890",
@@ -414,7 +435,7 @@ func TestPaymentUseCase_HandleCallback_TriggersMerchantWebhook(t *testing.T) {
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-WH-001",
-		PaymentMethod: "VA-MITRA",
+		PaymentMethod: constants.PaymentMethodVA,
 		BillTitle:     "Order Webhook",
 		CustomerName:  "Budi",
 		CustomerPhone: "081234567890",
@@ -487,7 +508,7 @@ func TestPaymentUseCase_RefreshPayment_Success(t *testing.T) {
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "ref-1790222645904-5585",
-		PaymentMethod: "QRIS-MITRA",
+		PaymentMethod: constants.PaymentMethodQRIS,
 		BillTitle:     "QRIS Order #1",
 		CustomerName:  "Siti Rahma",
 		CustomerPhone: "081298765432",
@@ -616,7 +637,7 @@ func TestPaymentUseCase_CreatePayment_OnlyAmountGiven(t *testing.T) {
 	// Merchant only provides amount, no amount_admin and no amount_total
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:   "INV-ONLY-AMOUNT-1",
-		PaymentMethod:  "MANDIRI",
+		PaymentMethod:  constants.PaymentMethodVAMandiri,
 		BillTitle:      "Order Mandiri",
 		CustomerName:   "Ahmad",
 		CustomerPhone:  "081234567890",
@@ -674,8 +695,8 @@ func TestPaymentUseCase_CreatePayment_QRISFeeCalculation(t *testing.T) {
 	ctx := context.Background()
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-QRIS-001",
-		PaymentMethod: "QRIS-MPM",
-		BillTitle:     "Order QRIS MPM",
+		PaymentMethod: constants.PaymentMethodQRIS,
+		BillTitle:     "Order QRIS",
 		CustomerName:  "Siti",
 		CustomerPhone: "081298765432",
 		Amount:        75000,
@@ -714,7 +735,7 @@ func TestPaymentUseCase_CreatePayment_OverwritesMerchantAdminFee(t *testing.T) {
 	// Merchant attempts to tamper admin fee to 0 and total to 50000
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:   "INV-TAMPER-1",
-		PaymentMethod:  "VA-MITRA",
+		PaymentMethod:  constants.PaymentMethodVA,
 		BillTitle:      "Order Tamper",
 		CustomerName:   "Budi",
 		CustomerPhone:  "081234567890",
@@ -767,7 +788,7 @@ func TestPaymentUseCase_HandleCallback_RefundFromSuccess(t *testing.T) {
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-REFUND-001",
-		PaymentMethod: "VA-MITRA",
+		PaymentMethod: constants.PaymentMethodVA,
 		BillTitle:     "Refund Test Order",
 		CustomerName:  "Eldiva",
 		CustomerPhone: "081234567890",
@@ -861,7 +882,7 @@ func TestPaymentUseCase_HandleCallback_Idempotency(t *testing.T) {
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-IDEM-001",
-		PaymentMethod: "VA-MITRA",
+		PaymentMethod: constants.PaymentMethodVA,
 		BillTitle:     "Idempotent Test",
 		CustomerName:  "Eldiva",
 		CustomerPhone: "081234567890",
@@ -922,7 +943,7 @@ func TestPaymentUseCase_HandleCallback_LatePaymentFromExpired(t *testing.T) {
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-LATE-001",
-		PaymentMethod: "VA-MITRA",
+		PaymentMethod: constants.PaymentMethodVA,
 		BillTitle:     "Late Payment Test",
 		CustomerName:  "Eldiva",
 		CustomerPhone: "081234567890",
@@ -991,7 +1012,7 @@ func TestPaymentUseCase_RefreshPayment_RefundDetection(t *testing.T) {
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-REFRESH-001",
-		PaymentMethod: "VA-MITRA",
+		PaymentMethod: constants.PaymentMethodVA,
 		BillTitle:     "Refresh Refund Test",
 		CustomerName:  "Eldiva",
 		CustomerPhone: "081234567890",
@@ -1030,6 +1051,126 @@ func TestPaymentUseCase_RefreshPayment_RefundDetection(t *testing.T) {
 	dispatch, _ := dispatchRepo.FindDispatchByID(ctx, nil, dispatcher.enqueued[0])
 	if dispatch.EventType != constants.WebhookEventPaymentRefund {
 		t.Errorf("expected EventType %q, got %q", constants.WebhookEventPaymentRefund, dispatch.EventType)
+	}
+}
+
+func TestPaymentUseCase_CreatePayment_StandardPaymentMethods(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	mockProv := &mockProvider{
+		billResult: &provider.BillResult{Token: "TOKEN-MOCK-STD"},
+	}
+	val := validator.New()
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+
+	ctx := context.Background()
+
+	methods := []string{
+		constants.PaymentMethodQRIS,
+		constants.PaymentMethodCC,
+		constants.PaymentMethodVA,
+		constants.PaymentMethodVABRI,
+		constants.PaymentMethodVABNI,
+		constants.PaymentMethodVAMandiri,
+		constants.PaymentMethodVABCA,
+	}
+
+	for i, method := range methods {
+		req := &payload.CreatePaymentRequest{
+			MerchantReff:  fmt.Sprintf("INV-STD-%d", i),
+			PaymentMethod: method,
+			BillTitle:     "Standard Method Test",
+			CustomerName:  "Budi",
+			CustomerPhone: "081234567890",
+			Amount:        50000,
+			AmountTotal:   50000,
+		}
+
+		res, err := uc.CreatePayment(ctx, req)
+		if err != nil {
+			t.Fatalf("unexpected error creating payment with method %s: %v", method, err)
+		}
+		if res.PaymentMethod != method {
+			t.Errorf("expected PaymentMethod %q, got %q", method, res.PaymentMethod)
+		}
+	}
+}
+
+func TestPaymentUseCase_CreatePayment_CaseInsensitive(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	mockProv := &mockProvider{
+		billResult: &provider.BillResult{Token: "TOKEN-CASE"},
+	}
+	val := validator.New()
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+
+	ctx := context.Background()
+
+	req := &payload.CreatePaymentRequest{
+		MerchantReff:  "INV-CASE-001",
+		PaymentMethod: "qris", // lowercase
+		BillTitle:     "Case Insensitive Test",
+		CustomerName:  "Budi",
+		CustomerPhone: "081234567890",
+		Amount:        50000,
+		AmountTotal:   50000,
+	}
+
+	res, err := uc.CreatePayment(ctx, req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.PaymentMethod != "QRIS" {
+		t.Errorf("expected normalized PaymentMethod 'QRIS', got %q", res.PaymentMethod)
+	}
+}
+
+func TestPaymentUseCase_CreatePayment_InvalidPaymentMethod_Rejected(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	mockProv := &mockProvider{
+		billResult: &provider.BillResult{Token: "TOKEN-MOCK-INVALID"},
+	}
+	val := validator.New()
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+
+	ctx := context.Background()
+
+	invalidMethods := []string{
+		"QRIS-MITRA",
+		"VA-MITRA",
+		"CC-MITRA",
+		"BRIVA-MITRA",
+		"BNIVA-MITRA",
+		"BRI",
+		"BNI",
+		"MANDIRI",
+		"BCA",
+		"BITCOIN",
+		"PAYPAL",
+		"UNKNOWN_METHOD",
+	}
+
+	for _, method := range invalidMethods {
+		req := &payload.CreatePaymentRequest{
+			MerchantReff:  fmt.Sprintf("INV-INVALID-%s", method),
+			PaymentMethod: method,
+			BillTitle:     "Invalid Method Test",
+			CustomerName:  "Budi",
+			CustomerPhone: "081234567890",
+			Amount:        50000,
+			AmountTotal:   50000,
+		}
+
+		_, err := uc.CreatePayment(ctx, req)
+		if err == nil {
+			t.Errorf("expected error for invalid payment method %q, got nil", method)
+			continue
+		}
+
+		appErr, ok := exception.As(err)
+		if !ok || appErr.Code != exception.CodeValidation {
+			t.Errorf("expected CodeValidation for method %q, got: %v", method, err)
+		}
 	}
 }
 

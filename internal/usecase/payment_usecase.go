@@ -53,13 +53,20 @@ func NewPaymentUseCase(
 }
 
 func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreatePaymentRequest) (*payload.PaymentResponse, error) {
-	if err := u.validate.Struct(req); err != nil {
-		return nil, exception.FromValidation(err)
-	}
-
 	p, ok := u.providers["pay2u"]
 	if !ok {
 		return nil, exception.Internal(fmt.Errorf("default provider pay2u not configured"))
+	}
+
+	req.PaymentMethod = utils.NormalizePaymentMethod(req.PaymentMethod)
+	if !utils.IsValidPaymentMethod(req.PaymentMethod) {
+		return nil, exception.Validation("payment_method is invalid or unsupported").WithDetails([]exception.FieldError{
+			{
+				Field:   "payment_method",
+				Rule:    "supported_method",
+				Message: fmt.Sprintf("payment_method %q is invalid or unsupported", req.PaymentMethod),
+			},
+		})
 	}
 
 	// Check existing transaction by request_id (replay protection)

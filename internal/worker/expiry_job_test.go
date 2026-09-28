@@ -135,7 +135,7 @@ func TestExpiryJob_Run(t *testing.T) {
 		ID:            txID,
 		MerchantID:    &merchantID,
 		MerchantReff:  "ORDER-EXP-123",
-		PaymentMethod: "QRIS-MITRA",
+		PaymentMethod: constants.PaymentMethodQRIS,
 		Amount:        50000,
 		AmountAdmin:   1000,
 		AmountTotal:   51000,

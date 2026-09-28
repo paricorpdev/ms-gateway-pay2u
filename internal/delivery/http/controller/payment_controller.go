@@ -26,6 +26,10 @@ func (c *PaymentController) CreatePayment(ctx *fiber.Ctx) error {
 		return exception.BadRequest("invalid request body").Wrap(err)
 	}
 
+	if err := req.Validate(); err != nil {
+		return err
+	}
+
 	res, err := c.paymentUC.CreatePayment(ctx.UserContext(), &req)
 	if err != nil {
 		return err
