@@ -78,11 +78,43 @@ func (r *inMemoryTxRepo) FindByMerchantReff(ctx context.Context, db *gorm.DB, re
 	return nil, nil
 }
 
+func (r *inMemoryTxRepo) FindByMerchantAndReff(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, reff string) (*entity.Transaction, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, tx := range r.transactions {
+		if tx.MerchantID != nil && *tx.MerchantID == merchantID && tx.MerchantReff == reff {
+			return tx, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *inMemoryTxRepo) FindByMerchantAndID(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, id uuid.UUID) (*entity.Transaction, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	tx, ok := r.transactions[id]
+	if !ok || tx.MerchantID == nil || *tx.MerchantID != merchantID {
+		return nil, nil
+	}
+	return tx, nil
+}
+
 func (r *inMemoryTxRepo) FindByProviderToken(ctx context.Context, db *gorm.DB, token string) (*entity.Transaction, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, tx := range r.transactions {
 		if tx.ProviderToken == token {
+			return tx, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *inMemoryTxRepo) FindByProviderTokenAndMerchantReff(ctx context.Context, db *gorm.DB, token, reff string) (*entity.Transaction, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, tx := range r.transactions {
+		if tx.ProviderToken == token && tx.MerchantReff == reff {
 			return tx, nil
 		}
 	}
@@ -108,6 +140,73 @@ func (r *inMemoryTxRepo) UpdateStatus(ctx context.Context, db *gorm.DB, id uuid.
 
 func (r *inMemoryTxRepo) ExpirePendingTransactions(ctx context.Context, db *gorm.DB, limit int) ([]*entity.Transaction, error) {
 	return nil, nil
+}
+
+type inMemoryCacheRepo struct {
+	mu    sync.RWMutex
+	store map[string][]byte
+	locks map[string]bool
+}
+
+func newInMemoryCacheRepo() *inMemoryCacheRepo {
+	return &inMemoryCacheRepo{
+		store: make(map[string][]byte),
+		locks: make(map[string]bool),
+	}
+}
+
+func (c *inMemoryCacheRepo) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.store[key] = value
+	return nil
+}
+
+func (c *inMemoryCacheRepo) Get(ctx context.Context, key string) ([]byte, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	val, ok := c.store[key]
+	if !ok {
+		return nil, nil
+	}
+	return val, nil
+}
+
+func (c *inMemoryCacheRepo) Delete(ctx context.Context, key string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.store, key)
+	return nil
+}
+
+func (c *inMemoryCacheRepo) AcquireLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.locks[key] {
+		return false, nil
+	}
+	c.locks[key] = true
+	return true, nil
+}
+
+func (c *inMemoryCacheRepo) ReleaseLock(ctx context.Context, key string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.locks, key)
+	return nil
+}
+
+var defaultTestMerchant = &entity.Merchant{
+	ID:         uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+	Code:       "TEST_MERCHANT",
+	Name:       "Test Merchant",
+	APIKey:     "test-key",
+	WebhookURL: "https://example.com/webhook",
+	IsActive:   true,
+}
+
+func testContext() context.Context {
+	return context.WithValue(context.Background(), constants.LocalsMerchant, defaultTestMerchant)
 }
 
 
@@ -228,9 +327,9 @@ func TestPaymentUseCase_CreatePayment_Success(t *testing.T) {
 		},
 	}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
-	ctx := context.Background()
+	ctx := testContext()
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:   "INV-2026-0001",
 		PaymentMethod:  constants.PaymentMethodVA,
@@ -262,9 +361,9 @@ func TestPaymentUseCase_CreatePayment_AutoGeneratesMerchantReffWhenEmpty(t *test
 	repo := newInMemoryTxRepo()
 	mockProv := &mockProvider{billResult: &provider.BillResult{Token: "TOKEN-MOCK"}}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
-	ctx := context.Background()
+	ctx := testContext()
 	req := &payload.CreatePaymentRequest{
 		// MerchantReff omitted -> usecase auto-generates
 		PaymentMethod: constants.PaymentMethodVA,
@@ -288,9 +387,9 @@ func TestPaymentUseCase_CreatePayment_DuplicateMerchantReff(t *testing.T) {
 	repo := newInMemoryTxRepo()
 	mockProv := &mockProvider{billResult: &provider.BillResult{Token: "TOKEN-MOCK"}}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
-	ctx1 := logger.WithRequestID(context.Background(), "req-001")
+	ctx1 := logger.WithRequestID(testContext(), "req-001")
 	req1 := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-DUP-TEST",
 		PaymentMethod: constants.PaymentMethodVA,
@@ -307,7 +406,7 @@ func TestPaymentUseCase_CreatePayment_DuplicateMerchantReff(t *testing.T) {
 	}
 
 	// Different request_id, but same merchant_reff -> should conflict
-	ctx2 := logger.WithRequestID(context.Background(), "req-002")
+	ctx2 := logger.WithRequestID(testContext(), "req-002")
 	req2 := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-DUP-TEST",
 		PaymentMethod: constants.PaymentMethodVA,
@@ -331,14 +430,15 @@ func TestPaymentUseCase_CreatePayment_DuplicateMerchantReff(t *testing.T) {
 func TestPaymentUseCase_CreatePayment_ReplayByRequestID(t *testing.T) {
 	repo := newInMemoryTxRepo()
 	calls := 0
+	_ = calls
 	mockProv := &mockProvider{
 		billResult: &provider.BillResult{Token: "TOKEN-MOCK", PaymentCode: "VA-123"},
 	}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
 	// Same request_id in context simulates HTTP retry with same X-Request-Id
-	ctx := logger.WithRequestID(context.Background(), "req-replay-same-123")
+	ctx := logger.WithRequestID(testContext(), "req-replay-same-123")
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-REPLAY-1",
 		PaymentMethod: constants.PaymentMethodVA,
@@ -372,9 +472,9 @@ func TestPaymentUseCase_HandleCallback(t *testing.T) {
 		billResult: &provider.BillResult{Token: "TOKEN-MOCK-123"},
 	}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
-	ctx := context.Background()
+	ctx := testContext()
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-2026-0001",
 		PaymentMethod: constants.PaymentMethodVA,
@@ -430,7 +530,7 @@ func TestPaymentUseCase_HandleCallback_TriggersMerchantWebhook(t *testing.T) {
 	}
 	_ = merchantRepo.Create(context.Background(), nil, merchant)
 
-	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
@@ -503,7 +603,7 @@ func TestPaymentUseCase_RefreshPayment_Success(t *testing.T) {
 	}
 	_ = merchantRepo.Create(context.Background(), nil, merchant)
 
-	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
@@ -631,9 +731,9 @@ func TestPaymentUseCase_CreatePayment_OnlyAmountGiven(t *testing.T) {
 		},
 	}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
-	ctx := context.Background()
+	ctx := testContext()
 	// Merchant only provides amount, no amount_admin and no amount_total
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:   "INV-ONLY-AMOUNT-1",
@@ -690,9 +790,9 @@ func TestPaymentUseCase_CreatePayment_QRISFeeCalculation(t *testing.T) {
 		},
 	}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
-	ctx := context.Background()
+	ctx := testContext()
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-QRIS-001",
 		PaymentMethod: constants.PaymentMethodQRIS,
@@ -729,9 +829,9 @@ func TestPaymentUseCase_CreatePayment_OverwritesMerchantAdminFee(t *testing.T) {
 		},
 	}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
-	ctx := context.Background()
+	ctx := testContext()
 	// Merchant attempts to tamper admin fee to 0 and total to 50000
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:   "INV-TAMPER-1",
@@ -783,7 +883,7 @@ func TestPaymentUseCase_HandleCallback_RefundFromSuccess(t *testing.T) {
 	}
 	_ = merchantRepo.Create(context.Background(), nil, merchant)
 
-	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
@@ -877,7 +977,7 @@ func TestPaymentUseCase_HandleCallback_Idempotency(t *testing.T) {
 	}
 	_ = merchantRepo.Create(context.Background(), nil, merchant)
 
-	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
@@ -938,7 +1038,7 @@ func TestPaymentUseCase_HandleCallback_LatePaymentFromExpired(t *testing.T) {
 	}
 	_ = merchantRepo.Create(context.Background(), nil, merchant)
 
-	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
@@ -1007,7 +1107,7 @@ func TestPaymentUseCase_RefreshPayment_RefundDetection(t *testing.T) {
 	}
 	_ = merchantRepo.Create(context.Background(), nil, merchant)
 
-	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, merchantRepo, dispatchRepo, dispatcher, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
 	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
 	req := &payload.CreatePaymentRequest{
@@ -1060,9 +1160,9 @@ func TestPaymentUseCase_CreatePayment_StandardPaymentMethods(t *testing.T) {
 		billResult: &provider.BillResult{Token: "TOKEN-MOCK-STD"},
 	}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
-	ctx := context.Background()
+	ctx := testContext()
 
 	methods := []string{
 		constants.PaymentMethodQRIS,
@@ -1101,9 +1201,9 @@ func TestPaymentUseCase_CreatePayment_CaseInsensitive(t *testing.T) {
 		billResult: &provider.BillResult{Token: "TOKEN-CASE"},
 	}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
-	ctx := context.Background()
+	ctx := testContext()
 
 	req := &payload.CreatePaymentRequest{
 		MerchantReff:  "INV-CASE-001",
@@ -1131,9 +1231,9 @@ func TestPaymentUseCase_CreatePayment_InvalidPaymentMethod_Rejected(t *testing.T
 		billResult: &provider.BillResult{Token: "TOKEN-MOCK-INVALID"},
 	}
 	val := validator.New()
-	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv})
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
 
-	ctx := context.Background()
+	ctx := testContext()
 
 	invalidMethods := []string{
 		"QRIS-MITRA",
@@ -1173,4 +1273,160 @@ func TestPaymentUseCase_CreatePayment_InvalidPaymentMethod_Rejected(t *testing.T
 		}
 	}
 }
+
+func TestPaymentUseCase_GetPayment_IDOR_Isolation(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	val := validator.New()
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{}, newInMemoryCacheRepo())
+
+	merchantA := &entity.Merchant{
+		ID:   uuid.New(),
+		Code: "MERCHANT_A",
+		Name: "Merchant A",
+	}
+	merchantB := &entity.Merchant{
+		ID:   uuid.New(),
+		Code: "MERCHANT_B",
+		Name: "Merchant B",
+	}
+
+	txA := &entity.Transaction{
+		ID:           uuid.New(),
+		MerchantID:   &merchantA.ID,
+		MerchantReff: "INV-TENANT-A",
+		AmountTotal:  50000,
+		Status:       constants.TransactionStatusPending,
+	}
+	_ = repo.Create(context.Background(), nil, txA)
+
+	ctxA := context.WithValue(context.Background(), constants.LocalsMerchant, merchantA)
+	ctxB := context.WithValue(context.Background(), constants.LocalsMerchant, merchantB)
+
+	// Merchant A queries own transaction by Reff -> Success
+	resA, err := uc.GetPayment(ctxA, "INV-TENANT-A")
+	if err != nil {
+		t.Fatalf("expected merchant A to find own transaction, got err: %v", err)
+	}
+	if resA.MerchantReff != "INV-TENANT-A" {
+		t.Errorf("expected MerchantReff %q, got %q", "INV-TENANT-A", resA.MerchantReff)
+	}
+
+	// Merchant A queries own transaction by UUID -> Success
+	resAUUID, err := uc.GetPayment(ctxA, txA.ID.String())
+	if err != nil {
+		t.Fatalf("expected merchant A to find own transaction by UUID, got err: %v", err)
+	}
+	if resAUUID.ID != txA.ID.String() {
+		t.Errorf("expected transaction ID %q, got %q", txA.ID.String(), resAUUID.ID)
+	}
+
+	// Merchant B queries Merchant A's transaction by Reff -> 404 Not Found (IDOR Blocked)
+	_, err = uc.GetPayment(ctxB, "INV-TENANT-A")
+	if err == nil {
+		t.Fatal("expected IDOR protection to return 404 for Merchant B querying Merchant A's transaction by Reff")
+	}
+	appErr, ok := exception.As(err)
+	if !ok || appErr.Code != exception.CodeNotFound {
+		t.Errorf("expected CodeNotFound, got %v", err)
+	}
+
+	// Merchant B queries Merchant A's transaction by UUID -> 404 Not Found (IDOR Blocked)
+	_, err = uc.GetPayment(ctxB, txA.ID.String())
+	if err == nil {
+		t.Fatal("expected IDOR protection to return 404 for Merchant B querying Merchant A's transaction by UUID")
+	}
+	appErr, ok = exception.As(err)
+	if !ok || appErr.Code != exception.CodeNotFound {
+		t.Errorf("expected CodeNotFound, got %v", err)
+	}
+}
+
+func TestPaymentUseCase_RefreshPayment_IDOR_Isolation(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	val := validator.New()
+	mockProv := &mockProvider{
+		billResult: &provider.BillResult{Status: 1},
+	}
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, newInMemoryCacheRepo())
+
+	merchantA := &entity.Merchant{
+		ID:   uuid.New(),
+		Code: "MERCHANT_A",
+		Name: "Merchant A",
+	}
+	merchantB := &entity.Merchant{
+		ID:   uuid.New(),
+		Code: "MERCHANT_B",
+		Name: "Merchant B",
+	}
+
+	txA := &entity.Transaction{
+		ID:            uuid.New(),
+		MerchantID:    &merchantA.ID,
+		MerchantReff:  "INV-REFRESH-A",
+		Provider:      "pay2u",
+		ProviderToken: "TOKEN-A",
+		Status:        constants.TransactionStatusPending,
+	}
+	_ = repo.Create(context.Background(), nil, txA)
+
+	ctxB := context.WithValue(context.Background(), constants.LocalsMerchant, merchantB)
+
+	// Merchant B attempts to refresh Merchant A's transaction -> 404 Not Found
+	_, err := uc.RefreshPayment(ctxB, "INV-REFRESH-A")
+	if err == nil {
+		t.Fatal("expected IDOR protection to block RefreshPayment across tenants")
+	}
+	appErr, ok := exception.As(err)
+	if !ok || appErr.Code != exception.CodeNotFound {
+		t.Errorf("expected CodeNotFound, got %v", err)
+	}
+}
+
+func TestPaymentUseCase_CreatePayment_Concurrency_Lock(t *testing.T) {
+	repo := newInMemoryTxRepo()
+	mockProv := &mockProvider{
+		billResult: &provider.BillResult{Token: "TOKEN-CONCURRENCY", PaymentCode: "VA-CONC"},
+	}
+	val := validator.New()
+	cache := newInMemoryCacheRepo()
+	uc := NewPaymentUseCase(nil, val, repo, newInMemoryMerchantRepo(), newInMemoryDispatchRepoForPaymentTest(), &mockDispatcher{}, map[string]provider.PaymentProvider{"pay2u": mockProv}, cache)
+
+	merchant := &entity.Merchant{
+		ID:   uuid.New(),
+		Code: "MERCHANT_CONC",
+		Name: "Merchant Concurrency",
+	}
+	ctx := context.WithValue(context.Background(), constants.LocalsMerchant, merchant)
+
+	// Simulate lock already acquired by an in-flight request
+	lockKey := fmt.Sprintf("paygate:lock:payment:%s:%s", merchant.ID.String(), "INV-RACE-001")
+	_, _ = cache.AcquireLock(ctx, lockKey, 30*time.Second)
+
+	req := &payload.CreatePaymentRequest{
+		MerchantReff:  "INV-RACE-001",
+		PaymentMethod: constants.PaymentMethodVA,
+		BillTitle:     "Order Race",
+		CustomerName:  "Budi",
+		CustomerPhone: "081234567890",
+		Amount:        50000,
+	}
+
+	// Request should hit concurrency detection and return Conflict after poll timeout
+	start := time.Now()
+	_, err := uc.CreatePayment(ctx, req)
+	duration := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected conflict error due to active lock, got nil")
+	}
+	appErr, ok := exception.As(err)
+	if !ok || appErr.Code != exception.CodeConflict {
+		t.Errorf("expected CodeConflict, got %v", err)
+	}
+	if duration < 1800*time.Millisecond {
+		t.Errorf("expected polling wait of around 2s, but took %v", duration)
+	}
+}
+
 

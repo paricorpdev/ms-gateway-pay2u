@@ -34,7 +34,16 @@ func (m *mockTxRepoForExpiry) FindByRequestID(ctx context.Context, db *gorm.DB, 
 func (m *mockTxRepoForExpiry) FindByMerchantReff(ctx context.Context, db *gorm.DB, reff string) (*entity.Transaction, error) {
 	return nil, nil
 }
+func (m *mockTxRepoForExpiry) FindByMerchantAndReff(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, reff string) (*entity.Transaction, error) {
+	return nil, nil
+}
+func (m *mockTxRepoForExpiry) FindByMerchantAndID(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, id uuid.UUID) (*entity.Transaction, error) {
+	return nil, nil
+}
 func (m *mockTxRepoForExpiry) FindByProviderToken(ctx context.Context, db *gorm.DB, token string) (*entity.Transaction, error) {
+	return nil, nil
+}
+func (m *mockTxRepoForExpiry) FindByProviderTokenAndMerchantReff(ctx context.Context, db *gorm.DB, token, reff string) (*entity.Transaction, error) {
 	return nil, nil
 }
 func (m *mockTxRepoForExpiry) UpdateStatus(ctx context.Context, db *gorm.DB, id uuid.UUID, status string, updates map[string]any) error {

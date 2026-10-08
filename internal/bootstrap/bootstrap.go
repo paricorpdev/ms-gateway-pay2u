@@ -110,6 +110,7 @@ func NewContainer(deps *Dependencies) *Container {
 		dispatchRepo,
 		dispatcher,
 		providers,
+		cache,
 	)
 
 	return &Container{

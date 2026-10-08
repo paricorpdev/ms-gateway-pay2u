@@ -58,9 +58,42 @@ func (r *transactionRepository) FindByMerchantReff(ctx context.Context, db *gorm
 	return &tx, nil
 }
 
+func (r *transactionRepository) FindByMerchantAndReff(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, reff string) (*entity.Transaction, error) {
+	var tx entity.Transaction
+	if err := db.WithContext(ctx).Where("merchant_id = ? AND merchant_reff = ?", merchantID, reff).First(&tx).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &tx, nil
+}
+
+func (r *transactionRepository) FindByMerchantAndID(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, id uuid.UUID) (*entity.Transaction, error) {
+	var tx entity.Transaction
+	if err := db.WithContext(ctx).Where("merchant_id = ? AND id = ?", merchantID, id).First(&tx).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &tx, nil
+}
+
 func (r *transactionRepository) FindByProviderToken(ctx context.Context, db *gorm.DB, token string) (*entity.Transaction, error) {
 	var tx entity.Transaction
 	if err := db.WithContext(ctx).Where("provider_token = ?", token).First(&tx).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &tx, nil
+}
+
+func (r *transactionRepository) FindByProviderTokenAndMerchantReff(ctx context.Context, db *gorm.DB, token, reff string) (*entity.Transaction, error) {
+	var tx entity.Transaction
+	if err := db.WithContext(ctx).Where("provider_token = ? AND merchant_reff = ?", token, reff).First(&tx).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}

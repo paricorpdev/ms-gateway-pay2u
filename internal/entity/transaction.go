@@ -49,12 +49,12 @@ func (j *JSONB) Scan(value any) error {
 
 type Transaction struct {
 	ID               uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	MerchantID       *uuid.UUID `gorm:"type:uuid;index" json:"merchant_id,omitempty"`
+	MerchantID       *uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_transactions_merchant_id_reff;index" json:"merchant_id,omitempty"`
 	Merchant         *Merchant  `gorm:"foreignKey:MerchantID" json:"merchant,omitempty"`
 	RequestID        string     `gorm:"column:request_id;uniqueIndex;size:255;not null" json:"request_id"`
 	Provider         string     `gorm:"size:50;not null;default:'pay2u'" json:"provider"`
 	ProviderToken    string     `gorm:"size:255" json:"provider_token,omitempty"`
-	MerchantReff     string     `gorm:"uniqueIndex;size:255;not null" json:"merchant_reff"`
+	MerchantReff     string     `gorm:"uniqueIndex:idx_transactions_merchant_id_reff;size:255;not null" json:"merchant_reff"`
 	PaymentMethod    string     `gorm:"size:50;not null" json:"payment_method"`
 	PaymentCode      string     `gorm:"type:text" json:"payment_code,omitempty"`
 	Status           string     `gorm:"size:20;not null;default:'PENDING';index" json:"status"`

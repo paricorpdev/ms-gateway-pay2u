@@ -30,6 +30,14 @@ const (
 )
 
 const (
+	DisbursementStatusWaitingSettlement = "WAITING_SETTLEMENT"
+	DisbursementStatusProcessing        = "PROCESSING"
+	DisbursementStatusSuccess           = "SUCCESS"
+	DisbursementStatusFailed            = "FAILED"
+	DisbursementStatusCancelled         = "CANCELLED"
+)
+
+const (
 	WebhookEventPaymentSuccess = "payment.success"
 	WebhookEventPaymentFailed  = "payment.failed"
 	WebhookEventPaymentExpired = "payment.expired"
@@ -65,9 +73,9 @@ const (
 
 // Pay2U Payment Methods
 const (
-	Pay2UMethodQRIS  = "QRIS-MITRA"
-	Pay2UMethodCC    = "CC-MITRA"
-	Pay2UMethodVA    = "VA-MITRA"
+	Pay2UMethodQRIS = "QRIS-MITRA"
+	Pay2UMethodCC   = "CC-MITRA"
+	Pay2UMethodVA   = "VA-MITRA"
 	// Pay2UMethodVABRI = "BRIVA-MITRA"
 	// Pay2UMethodVABNI = "BNIVA-MITRA"
 )

@@ -132,6 +132,14 @@ func (c *inMemoryCache) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+func (c *inMemoryCache) AcquireLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (c *inMemoryCache) ReleaseLock(ctx context.Context, key string) error {
+	return nil
+}
+
 func TestMerchantUseCase_CreateAndValidate(t *testing.T) {
 	repo := newInMemoryMerchantRepo()
 	cache := newInMemoryCache()

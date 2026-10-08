@@ -16,7 +16,10 @@ type TransactionRepository interface {
 	FindByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*entity.Transaction, error)
 	FindByRequestID(ctx context.Context, db *gorm.DB, requestID string) (*entity.Transaction, error)
 	FindByMerchantReff(ctx context.Context, db *gorm.DB, reff string) (*entity.Transaction, error)
+	FindByMerchantAndReff(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, reff string) (*entity.Transaction, error)
+	FindByMerchantAndID(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, id uuid.UUID) (*entity.Transaction, error)
 	FindByProviderToken(ctx context.Context, db *gorm.DB, token string) (*entity.Transaction, error)
+	FindByProviderTokenAndMerchantReff(ctx context.Context, db *gorm.DB, token, reff string) (*entity.Transaction, error)
 	UpdateStatus(ctx context.Context, db *gorm.DB, id uuid.UUID, status string, updates map[string]any) error
 	ExpirePendingTransactions(ctx context.Context, db *gorm.DB, limit int) ([]*entity.Transaction, error)
 }
@@ -25,6 +28,8 @@ type CacheRepository interface {
 	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
 	Get(ctx context.Context, key string) ([]byte, error)
 	Delete(ctx context.Context, key string) error
+	AcquireLock(ctx context.Context, key string, ttl time.Duration) (bool, error)
+	ReleaseLock(ctx context.Context, key string) error
 }
 
 type AuditLogRepository interface {
@@ -57,7 +62,7 @@ type WebhookDispatchRepository interface {
 var (
 	_ TransactionRepository     = (*transactionRepository)(nil)
 	_ CacheRepository           = (*redisRepository)(nil)
-	_ AuditLogRepository       = (*auditLogRepository)(nil)
-	_ MerchantRepository       = (*merchantRepository)(nil)
+	_ AuditLogRepository        = (*auditLogRepository)(nil)
+	_ MerchantRepository        = (*merchantRepository)(nil)
 	_ WebhookDispatchRepository = (*webhookDispatchRepository)(nil)
 )

@@ -30,6 +30,7 @@ type PaymentUseCase struct {
 	dispatchRepo repository.WebhookDispatchRepository
 	dispatcher   webhook.Dispatcher
 	providers    map[string]provider.PaymentProvider
+	cache        repository.CacheRepository
 }
 
 func NewPaymentUseCase(
@@ -40,6 +41,7 @@ func NewPaymentUseCase(
 	dispatchRepo repository.WebhookDispatchRepository,
 	dispatcher webhook.Dispatcher,
 	providers map[string]provider.PaymentProvider,
+	cache repository.CacheRepository,
 ) *PaymentUseCase {
 	return &PaymentUseCase{
 		db:           db,
@@ -49,10 +51,16 @@ func NewPaymentUseCase(
 		dispatchRepo: dispatchRepo,
 		dispatcher:   dispatcher,
 		providers:    providers,
+		cache:        cache,
 	}
 }
 
 func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreatePaymentRequest) (*payload.PaymentResponse, error) {
+	merchant, ok := ctx.Value(constants.LocalsMerchant).(*entity.Merchant)
+	if !ok || merchant == nil {
+		return nil, exception.Unauthorized("merchant authentication required")
+	}
+
 	p, ok := u.providers["pay2u"]
 	if !ok {
 		return nil, exception.Internal(fmt.Errorf("default provider pay2u not configured"))
@@ -80,7 +88,10 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 		return nil, exception.Internal(fmt.Errorf("find transaction by request_id: %w", err))
 	}
 	if existing != nil {
-		return converter.ToPaymentResponse(existing), nil
+		if existing.MerchantID != nil && *existing.MerchantID == merchant.ID {
+			return converter.ToPaymentResponse(existing), nil
+		}
+		return nil, exception.Conflict("request_id has already been used")
 	}
 
 	merchantReff := req.MerchantReff
@@ -88,7 +99,35 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 		merchantReff = fmt.Sprintf("X%d", time.Now().UnixNano())
 	}
 
-	existingReff, err := u.txRepo.FindByMerchantReff(ctx, u.db, merchantReff)
+	// acquire Redis distributed mutex on merchant_id + merchant_reff
+	lockKey := fmt.Sprintf("paygate:lock:payment:%s:%s", merchant.ID.String(), merchantReff)
+	if u.cache != nil {
+		acquired, lockErr := u.cache.AcquireLock(ctx, lockKey, 30*time.Second)
+		if lockErr == nil && !acquired {
+			// Concurrency detected: another request is in-flight with the same reference.
+			// Poll briefly (up to 2 seconds) to return idempotent response if already saved.
+			for i := 0; i < 10; i++ {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(200 * time.Millisecond):
+				}
+				existingTx, err := u.txRepo.FindByMerchantAndReff(ctx, u.db, merchant.ID, merchantReff)
+				if err == nil && existingTx != nil {
+					return converter.ToPaymentResponse(existingTx), nil
+				}
+			}
+			return nil, exception.Conflict(fmt.Sprintf("transaction with merchant_reff %q is currently being processed", merchantReff))
+		}
+		if lockErr == nil && acquired {
+			defer func() {
+				_ = u.cache.ReleaseLock(ctx, lockKey)
+			}()
+		}
+	}
+
+	// Double-checked locking in database: scoped to this merchant
+	existingReff, err := u.txRepo.FindByMerchantAndReff(ctx, u.db, merchant.ID, merchantReff)
 	if err != nil {
 		return nil, exception.Internal(fmt.Errorf("check merchant reff: %w", err))
 	}
@@ -96,7 +135,7 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 		return nil, exception.Conflict(fmt.Sprintf("transaction with merchant_reff %q already exists", merchantReff))
 	}
 
-	// Calculate admin fee and amount_total from paygate rules
+	// Calculate admin fee and amount_total from internal rules
 	adminFee := utils.CalculateAdminFee(req.PaymentMethod, req.Amount)
 	req.AmountAdmin = adminFee
 	req.AmountTotal = req.Amount + adminFee - req.AmountDiscount
@@ -134,14 +173,9 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 		return nil, exception.Internal(fmt.Errorf("provider create bill: %w", err))
 	}
 
-	var merchantID *uuid.UUID
-	if m, ok := ctx.Value(constants.LocalsMerchant).(*entity.Merchant); ok && m != nil {
-		merchantID = &m.ID
-	}
-
 	tx := &entity.Transaction{
 		ID:              uuid.New(),
-		MerchantID:      merchantID,
+		MerchantID:      &merchant.ID,
 		RequestID:       requestID,
 		Provider:        p.Name(),
 		ProviderToken:   billResult.Token,
@@ -170,18 +204,28 @@ func (u *PaymentUseCase) CreatePayment(ctx context.Context, req *payload.CreateP
 }
 
 func (u *PaymentUseCase) findTransaction(ctx context.Context, identifier string) (*entity.Transaction, error) {
-	tx, err := u.txRepo.FindByMerchantReff(ctx, u.db, identifier)
-	if err != nil {
-		return nil, exception.Internal(fmt.Errorf("find transaction by merchant_reff: %w", err))
+	merchant, ok := ctx.Value(constants.LocalsMerchant).(*entity.Merchant)
+	if !ok || merchant == nil {
+		return nil, exception.Unauthorized("merchant authentication required")
 	}
-	if tx == nil {
-		if uid, parseErr := uuid.Parse(identifier); parseErr == nil {
-			tx, err = u.txRepo.FindByID(ctx, u.db, uid)
-			if err != nil && !exception.IsNotFound(err) {
-				return nil, exception.Internal(fmt.Errorf("find transaction by id: %w", err))
-			}
+
+	var tx *entity.Transaction
+	var err error
+
+	if uid, parseErr := uuid.Parse(identifier); parseErr == nil {
+		tx, err = u.txRepo.FindByMerchantAndID(ctx, u.db, merchant.ID, uid)
+		if err != nil && !exception.IsNotFound(err) {
+			return nil, exception.Internal(fmt.Errorf("find transaction by id: %w", err))
 		}
 	}
+
+	if tx == nil {
+		tx, err = u.txRepo.FindByMerchantAndReff(ctx, u.db, merchant.ID, identifier)
+		if err != nil {
+			return nil, exception.Internal(fmt.Errorf("find transaction by merchant_reff: %w", err))
+		}
+	}
+
 	return tx, nil
 }
 
@@ -292,18 +336,45 @@ func (u *PaymentUseCase) HandleCallback(ctx context.Context, providerName string
 		return exception.BadRequest(fmt.Sprintf("parse callback: %v", err))
 	}
 
-	tx, err := u.txRepo.FindByMerchantReff(ctx, u.db, cb.MerchantReff)
-	if err != nil {
-		return exception.Internal(err)
+	// tx, err := u.txRepo.FindByMerchantReff(ctx, u.db, cb.MerchantReff)
+	// if err != nil {
+	// 	return exception.Internal(err)
+	// }
+
+	var tx *entity.Transaction
+
+	// Priority 1: Provider Token + Merchant Reff
+	if cb.ProviderToken != "" && cb.MerchantReff != "" {
+		tx, err = u.txRepo.FindByProviderTokenAndMerchantReff(ctx, u.db, cb.ProviderToken, cb.MerchantReff)
+		if err != nil {
+			return exception.Internal(err)
+		}
 	}
+
+	// Priority 2: Provider Token
 	if tx == nil && cb.ProviderToken != "" {
 		tx, err = u.txRepo.FindByProviderToken(ctx, u.db, cb.ProviderToken)
 		if err != nil {
 			return exception.Internal(err)
 		}
 	}
+
 	if tx == nil {
 		return exception.NotFound(fmt.Sprintf("transaction with reff %s not found", cb.MerchantReff))
+	}
+
+	if u.cache != nil {
+		lockKey := fmt.Sprintf("paygate:lock:callback:%s", tx.ID.String())
+		acquired, lockErr := u.cache.AcquireLock(ctx, lockKey, 10*time.Second)
+		if lockErr == nil && !acquired {
+			// Another concurrent callback is currently updating this transaction
+			return nil
+		}
+		if lockErr == nil && acquired {
+			defer func() {
+				_ = u.cache.ReleaseLock(ctx, lockKey)
+			}()
+		}
 	}
 
 	newStatus := mapProviderStatus(cb.Status)

@@ -46,3 +46,16 @@ func (r *redisRepository) Get(ctx context.Context, key string) ([]byte, error) {
 func (r *redisRepository) Delete(ctx context.Context, key string) error {
 	return r.client.Del(ctx, key).Err()
 }
+
+// AcquireLock acquires a distributed mutex using SetNX with the specified TTL.
+func (r *redisRepository) AcquireLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+	if ttl <= 0 {
+		ttl = 15 * time.Second
+	}
+	return r.client.SetNX(ctx, key, "1", ttl).Result()
+}
+
+// ReleaseLock removes the mutex key in Redis.
+func (r *redisRepository) ReleaseLock(ctx context.Context, key string) error {
+	return r.client.Del(ctx, key).Err()
+}
