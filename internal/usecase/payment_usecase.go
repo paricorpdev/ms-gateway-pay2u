@@ -359,6 +359,14 @@ func (u *PaymentUseCase) HandleCallback(ctx context.Context, providerName string
 		}
 	}
 
+	// Priority 3: Merchant Reff
+	if tx == nil && cb.MerchantReff != "" {
+		tx, err = u.txRepo.FindByMerchantReff(ctx, u.db, cb.MerchantReff)
+		if err != nil {
+			return exception.Internal(err)
+		}
+	}
+
 	if tx == nil {
 		return exception.NotFound(fmt.Sprintf("transaction with reff %s not found", cb.MerchantReff))
 	}
