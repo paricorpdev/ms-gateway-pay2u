@@ -60,15 +60,14 @@ const (
 	PaymentMethodQRIS      = "QRIS"
 	PaymentMethodCC        = "CC"
 	PaymentMethodVA        = "VA"
-	PaymentMethodVABRI     = "VA_BRI"
 	PaymentMethodVABNI     = "VA_BNI"
-	PaymentMethodVAMandiri = "VA_MANDIRI"
-	PaymentMethodVABCA     = "VA_BCA"
-	PaymentMethodVAPermata = "VA_PERMATA"
-	PaymentMethodVACIMB    = "VA_CIMB"
+	PaymentMethodVABRI     = "VA_BRI"
 	PaymentMethodVABSI     = "VA_BSI"
 	PaymentMethodVABTN     = "VA_BTN"
+	PaymentMethodVACIMB    = "VA_CIMB"
 	PaymentMethodVADanamon = "VA_DANAMON"
+	PaymentMethodVAMandiri = "VA_MANDIRI"
+	PaymentMethodVAPermata = "VA_PERMATA"
 )
 
 // Pay2U Payment Methods

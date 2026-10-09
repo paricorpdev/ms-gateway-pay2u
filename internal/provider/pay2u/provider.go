@@ -36,7 +36,6 @@ func (p *Provider) resolveProviderMethod(paygateMethod string) string {
 		constants.PaymentMethodVABRI,
 		constants.PaymentMethodVABNI,
 		constants.PaymentMethodVAMandiri,
-		constants.PaymentMethodVABCA,
 		constants.PaymentMethodVAPermata,
 		constants.PaymentMethodVACIMB,
 		constants.PaymentMethodVABSI,

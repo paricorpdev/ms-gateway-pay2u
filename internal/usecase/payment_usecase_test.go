@@ -209,7 +209,6 @@ func testContext() context.Context {
 	return context.WithValue(context.Background(), constants.LocalsMerchant, defaultTestMerchant)
 }
 
-
 type mockDispatcher struct {
 	mu       sync.Mutex
 	enqueued []uuid.UUID
@@ -272,7 +271,6 @@ func (r *inMemoryDispatchRepoForPaymentTest) DeleteDispatchLogsBefore(ctx contex
 	return 0, nil
 }
 
-
 type mockProvider struct {
 	lastBillReq *provider.BillRequest
 	billResult  *provider.BillResult
@@ -309,7 +307,7 @@ func (m *mockProvider) IsValidPaymentMethod(method string) bool {
 	switch m.NormalizePaymentMethod(method) {
 	case constants.PaymentMethodQRIS, constants.PaymentMethodCC, constants.PaymentMethodVA,
 		constants.PaymentMethodVABRI, constants.PaymentMethodVABNI, constants.PaymentMethodVAMandiri,
-		constants.PaymentMethodVABCA, constants.PaymentMethodVAPermata, constants.PaymentMethodVACIMB,
+		constants.PaymentMethodVAPermata, constants.PaymentMethodVACIMB,
 		constants.PaymentMethodVABSI, constants.PaymentMethodVABTN, constants.PaymentMethodVADanamon:
 		return true
 	default:
@@ -1171,7 +1169,6 @@ func TestPaymentUseCase_CreatePayment_StandardPaymentMethods(t *testing.T) {
 		constants.PaymentMethodVABRI,
 		constants.PaymentMethodVABNI,
 		constants.PaymentMethodVAMandiri,
-		constants.PaymentMethodVABCA,
 	}
 
 	for i, method := range methods {
@@ -1428,5 +1425,3 @@ func TestPaymentUseCase_CreatePayment_Concurrency_Lock(t *testing.T) {
 		t.Errorf("expected polling wait of around 2s, but took %v", duration)
 	}
 }
-
-

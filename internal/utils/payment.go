@@ -15,7 +15,7 @@ func IsValidPaymentMethod(method string) bool {
 	switch NormalizePaymentMethod(method) {
 	case constants.PaymentMethodQRIS, constants.PaymentMethodCC, constants.PaymentMethodVA,
 		constants.PaymentMethodVABRI, constants.PaymentMethodVABNI, constants.PaymentMethodVAMandiri,
-		constants.PaymentMethodVABCA, constants.PaymentMethodVAPermata, constants.PaymentMethodVACIMB,
+		constants.PaymentMethodVAPermata, constants.PaymentMethodVACIMB,
 		constants.PaymentMethodVABSI, constants.PaymentMethodVABTN, constants.PaymentMethodVADanamon:
 		return true
 	default:

@@ -29,7 +29,6 @@ func TestCreatePaymentRequest_Validate_Success(t *testing.T) {
 		constants.PaymentMethodVABRI,
 		constants.PaymentMethodVABNI,
 		constants.PaymentMethodVAMandiri,
-		constants.PaymentMethodVABCA,
 		constants.PaymentMethodVAPermata,
 		constants.PaymentMethodVACIMB,
 		constants.PaymentMethodVABSI,
