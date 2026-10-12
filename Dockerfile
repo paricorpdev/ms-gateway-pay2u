@@ -38,9 +38,6 @@ WORKDIR /app
 COPY --from=builder --chown=app:app --chmod=500 \
     /app/bin/paygate /app/paygate
 
-COPY --from=builder --chown=app:app --chmod=644 \
-    /app/config.yml /app/config.yml
-
 COPY --from=builder --chown=app:app \
     /app/db/migrations /app/db/migrations
 
