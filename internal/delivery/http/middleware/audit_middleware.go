@@ -64,6 +64,12 @@ func NewAuditMiddleware(worker *audit.AuditWorker) fiber.Handler {
 		if sourceService == "" {
 			sourceService = ctx.Get("X-Service-Name")
 		}
+		if sourceService == "" && strings.Contains(path, "/callback/") {
+			segments := strings.Split(strings.Trim(path, "/"), "/")
+			if len(segments) > 0 {
+				sourceService = strings.Clone(segments[len(segments)-1])
+			}
+		}
 		if sourceService == "" {
 			sourceService = ctx.Get("User-Agent")
 		}

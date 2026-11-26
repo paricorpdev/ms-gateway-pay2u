@@ -271,7 +271,6 @@ Payment and disbursement endpoints require the merchant's `X-API-Key`. Merchant 
   "transaction_id": "3f88f847-7237-42d7-9d52-4383a9558701",
   "merchant_reff": "payout-2026-0001",
   "channel_code": "TF-MITRA",
-  "url_listener_merchant": "https://merchant.example.com/pay2u/disbursement-callback",
   "url_redirect_merchant": "https://merchant.example.com/payouts/return",
   "receiver_account_number": "1234567890",
   "receiver_name": "Recipient Name",
@@ -285,7 +284,7 @@ Payment and disbursement endpoints require the merchant's `X-API-Key`. Merchant 
 }
 ```
 
-`amount_total` must equal `amount + amount_admin - amount_discount`. `channel_code` defaults to `TF-MITRA`, and `expired_minutes` defaults to 30. The listener URL is saved on the disbursement and receives the final notification; its origin must match the merchant's configured `webhook_url`. Pay2U itself is configured to call the gateway callback at `{pay2u.callback_base_url}/api/v1/disbursements/callback/pay2u`.
+`amount_total` must equal `amount + amount_admin - amount_discount`. `channel_code` defaults to `TF-MITRA`, and `expired_minutes` defaults to 30. The gateway always sends Pay2U the static callback URL `{pay2u.callback_base_url}/api/v1/disbursements/callback/pay2u`; callers do not choose this URL. The legacy `url_listener_merchant` input is ignored. After validating a Pay2U callback, the gateway sends the final notification to the merchant's configured `webhook_url`.
 
 The inquiry response contains the disbursement record in `WAITING_SETTLEMENT`. The Pay2U provider token stays inside the gateway and is reused for transfer.
 
@@ -303,7 +302,7 @@ Returns the latest disbursement status and provider reference number when availa
 
 ### Pay2U transfer callback
 
-Pay2U calls `POST /api/v1/disbursements/callback/pay2u`. The gateway validates the token/reference pair and, for success notifications, checks `amount_paid` against the saved `amount_total`. It then updates the record and forwards the FSD callback fields to `url_listener_merchant`, with `X-Paygate-Signature` when the merchant has a webhook secret.
+Pay2U calls `POST /api/v1/disbursements/callback/pay2u`. The gateway validates the token/reference pair and checks callback details such as channel, beneficiary, and any supplied amount fields against the saved inquiry. For success notifications, it also checks `amount_paid` against the saved `amount_total`. It stores the callback payload and updates the status, transfer date, and provider reference, then sends the final notification to the merchant's configured `webhook_url`, with `X-Paygate-Signature` when the merchant has a webhook secret.
 
 Configure the Pay2U paths in `config.yml` under `pay2u.transfer_bank_inquiry_url` and `pay2u.transfer_bank_url`, and set `pay2u.callback_base_url` to a public base URL for this service. Apply the new `000009_create_disbursements_table` migration before starting the new endpoints:
 

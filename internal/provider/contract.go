@@ -118,10 +118,16 @@ type BankTransferCallbackResult struct {
 	ReceiverName          string
 	ReceiverBank          string
 	ReceiverBankName      string
+	Amount                *int64
+	AmountAdmin           *int64
+	AmountDiscount        *int64
+	AmountTotal           *int64
 	AmountPaid            int64
+	Note                  string
 	Status                int
 	TransferDate          string
 	ReferenceNo           string
+	ExpiredMinutes        *int
 }
 
 type DisbursementProvider interface {

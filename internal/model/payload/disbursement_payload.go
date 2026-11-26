@@ -12,10 +12,12 @@ var disbursementValidator = config.NewValidator()
 // DisbursementInquiryRequest follows Pay2U's account-inquiry fields and adds
 // transaction_id to link the payout to the successful incoming payment.
 type DisbursementInquiryRequest struct {
-	TransactionID       string `json:"transaction_id" validate:"required,uuid4"`
-	MerchantReff        string `json:"merchant_reff" validate:"required,max=255"`
-	ChannelCode         string `json:"channel_code" validate:"omitempty,max=50"`
-	URLListenerMerchant string `json:"url_listener_merchant" validate:"required,url,max=2048"`
+	TransactionID string `json:"transaction_id" validate:"required,uuid4"`
+	MerchantReff  string `json:"merchant_reff" validate:"required,max=255"`
+	ChannelCode   string `json:"channel_code" validate:"omitempty,max=50"`
+	// URLListenerMerchant is accepted for backward compatibility but ignored.
+	// Pay2U's callback listener is configured by the gateway, not by API callers.
+	URLListenerMerchant string `json:"url_listener_merchant,omitempty"`
 	ReceiverAccount     string `json:"receiver_account_number" validate:"required,max=255"`
 	ReceiverName        string `json:"receiver_name" validate:"required,max=255"`
 	ReceiverBank        string `json:"receiver_bank" validate:"required,max=50"`

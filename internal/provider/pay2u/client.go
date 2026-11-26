@@ -156,10 +156,15 @@ func (c *Client) recordOutbound(ctx context.Context, reqType string, attempt int
 	}
 
 	headersJSON, _ := json.Marshal(headers)
+	var transactionID *uuid.UUID
+	if id, ok := logger.TransactionIDFromContext(ctx); ok {
+		transactionID = &id
+	}
 
 	c.audit.RecordOutbound(&entity.OutboundRequest{
 		ID:              uuid.New(),
 		RequestID:       reqID,
+		TransactionID:   transactionID,
 		Provider:        "pay2u",
 		RequestType:     reqType,
 		Attempt:         attempt,

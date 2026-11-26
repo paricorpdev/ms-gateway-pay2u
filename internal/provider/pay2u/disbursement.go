@@ -60,7 +60,7 @@ func (c *Client) AccountInquiry(ctx context.Context, input *provider.BankTransfe
 			return nil, fmt.Errorf("pay2u.callback_base_url is required for disbursement callbacks")
 		}
 		request.URLListenerMerchant = c.disbursementListenerURL()
-		response, rawResponse, err := c.postBankRequest(ctx, provider.RequestTypeBankInquiry, c.config.TransferBankInquiryURL, oauthToken, request)
+		response, rawResponse, err := c.postBankRequest(ctx, provider.RequestTypeBankInquiry, attempt, c.config.TransferBankInquiryURL, oauthToken, request)
 		if err != nil {
 			return nil, err
 		}
@@ -122,7 +122,7 @@ func (c *Client) AccountTransfer(ctx context.Context, request provider.BankTrans
 	}
 	request.URLListenerMerchant = c.disbursementListenerURL()
 
-	response, rawResponse, err := c.postBankRequest(ctx, provider.RequestTypeBankTransfer, c.config.TransferBankURL, oauthToken, request)
+	response, rawResponse, err := c.postBankRequest(ctx, provider.RequestTypeBankTransfer, 1, c.config.TransferBankURL, oauthToken, request)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func (c *Client) AccountTransfer(ctx context.Context, request provider.BankTrans
 	}, nil
 }
 
-func (c *Client) postBankRequest(ctx context.Context, requestType, endpoint, oauthToken string, body any) (*pay2uResponse, []byte, error) {
+func (c *Client) postBankRequest(ctx context.Context, requestType string, attempt int, endpoint, oauthToken string, body any) (*pay2uResponse, []byte, error) {
 	if endpoint == "" {
 		return nil, nil, fmt.Errorf("Pay2U endpoint for %s is not configured", requestType)
 	}
@@ -197,13 +197,13 @@ func (c *Client) postBankRequest(ctx context.Context, requestType, endpoint, oau
 	resp, err := c.http.Do(req)
 	latency := time.Since(start).Milliseconds()
 	if err != nil {
-		c.recordOutbound(ctx, requestType, 1, reqURL, http.MethodPost, headers, bodyBytes, 0, []byte(err.Error()), latency)
+		c.recordOutbound(ctx, requestType, attempt, reqURL, http.MethodPost, headers, bodyBytes, 0, []byte(err.Error()), latency)
 		return nil, nil, &provider.OutcomeUnknownError{Err: fmt.Errorf("send %s request: %w", requestType, err)}
 	}
 	defer resp.Body.Close()
 
 	responseBytes, _ := io.ReadAll(resp.Body)
-	c.recordOutbound(ctx, requestType, 1, reqURL, http.MethodPost, headers, bodyBytes, resp.StatusCode, responseBytes, latency)
+	c.recordOutbound(ctx, requestType, attempt, reqURL, http.MethodPost, headers, bodyBytes, resp.StatusCode, responseBytes, latency)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, responseBytes, &provider.OutcomeUnknownError{Err: fmt.Errorf("%s returned HTTP %d: %s", requestType, resp.StatusCode, string(responseBytes))}
 	}
@@ -239,10 +239,16 @@ func (p *Provider) ParseTransferCallback(raw []byte) (*provider.BankTransferCall
 		ReceiverName          string  `json:"receiver_name"`
 		ReceiverBank          string  `json:"receiver_bank"`
 		ReceiverBankName      string  `json:"receiver_bank_name"`
+		Amount                *int64  `json:"amount"`
+		AmountAdmin           *int64  `json:"amount_admin"`
+		AmountDiscount        *int64  `json:"amount_discount"`
+		AmountTotal           *int64  `json:"amount_total"`
 		AmountPaid            float64 `json:"amount_paid"`
+		Note                  string  `json:"note"`
 		Status                int     `json:"status"`
 		TransferDate          string  `json:"transfer_date"`
 		ReferenceNo           string  `json:"reference_no"`
+		ExpiredMinutes        *int    `json:"expired_minutes"`
 	}
 	if err := json.Unmarshal(raw, &callback); err != nil {
 		return nil, fmt.Errorf("decode account transfer callback: %w", err)
@@ -258,10 +264,16 @@ func (p *Provider) ParseTransferCallback(raw []byte) (*provider.BankTransferCall
 		ReceiverName:          callback.ReceiverName,
 		ReceiverBank:          callback.ReceiverBank,
 		ReceiverBankName:      callback.ReceiverBankName,
+		Amount:                callback.Amount,
+		AmountAdmin:           callback.AmountAdmin,
+		AmountDiscount:        callback.AmountDiscount,
+		AmountTotal:           callback.AmountTotal,
 		AmountPaid:            int64(callback.AmountPaid),
+		Note:                  callback.Note,
 		Status:                callback.Status,
 		TransferDate:          callback.TransferDate,
 		ReferenceNo:           callback.ReferenceNo,
+		ExpiredMinutes:        callback.ExpiredMinutes,
 	}, nil
 }
 

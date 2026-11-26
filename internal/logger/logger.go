@@ -3,16 +3,19 @@ package logger
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
 type contextKey struct{}
 type reqIDContextKey struct{}
+type transactionIDContextKey struct{}
 
 var (
-	loggerKey contextKey
-	reqKey    reqIDContextKey
-	fallback  = logrus.New()
+	loggerKey      contextKey
+	reqKey         reqIDContextKey
+	transactionKey transactionIDContextKey
+	fallback       = logrus.New()
 )
 
 func SetFallback(log *logrus.Logger) {
@@ -52,4 +55,17 @@ func RequestIDFromContext(ctx context.Context) string {
 		}
 	}
 	return ""
+}
+
+func WithTransactionID(ctx context.Context, transactionID uuid.UUID) context.Context {
+	return context.WithValue(ctx, transactionKey, transactionID)
+}
+
+func TransactionIDFromContext(ctx context.Context) (uuid.UUID, bool) {
+	if ctx != nil {
+		if id, ok := ctx.Value(transactionKey).(uuid.UUID); ok && id != uuid.Nil {
+			return id, true
+		}
+	}
+	return uuid.Nil, false
 }

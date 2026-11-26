@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net/url"
 	"strings"
 	"time"
 
@@ -73,12 +72,11 @@ func (u *DisbursementUseCase) InquiryAccount(ctx context.Context, req *payload.D
 	if transaction == nil {
 		return nil, exception.NotFound("source transaction not found")
 	}
+	providerCtx := logger.WithTransactionID(ctx, transaction.ID)
 	if transaction.Status != constants.TransactionStatusSuccess {
 		return nil, exception.Conflict("disbursement inquiry requires a successful payment transaction")
 	}
-	if !sameURLOrigin(req.URLListenerMerchant, merchant.WebhookURL) {
-		return nil, exception.Forbidden("url_listener_merchant must use the merchant's configured webhook origin")
-	}
+	merchantWebhookURL := strings.TrimSpace(merchant.WebhookURL)
 
 	amountTotal, err := calculateDisbursementTotal(req.Amount, req.AmountAdmin, req.AmountDiscount)
 	if err != nil {
@@ -104,7 +102,7 @@ func (u *DisbursementUseCase) InquiryAccount(ctx context.Context, req *payload.D
 		return nil, exception.Internal(fmt.Errorf("find existing disbursement: %w", err))
 	}
 	if existing != nil {
-		if existing.MerchantRef == merchantRef && sameDisbursementRequest(existing, req, amountTotal) {
+		if existing.MerchantRef == merchantRef && sameDisbursementRequest(existing, req, amountTotal, merchantWebhookURL) {
 			return disbursementResponse(existing), nil
 		}
 		return nil, exception.Conflict("a disbursement already exists for this transaction")
@@ -133,7 +131,7 @@ func (u *DisbursementUseCase) InquiryAccount(ctx context.Context, req *payload.D
 		Note:                  strings.TrimSpace(req.Note),
 		ExpiredMinutes:        expiredMinutes,
 	}
-	inquiry, err := u.provider.AccountInquiry(ctx, providerRequest)
+	inquiry, err := u.provider.AccountInquiry(providerCtx, providerRequest)
 	if err != nil {
 		var providerErr *provider.APIError
 		if errors.As(err, &providerErr) {
@@ -170,7 +168,7 @@ func (u *DisbursementUseCase) InquiryAccount(ctx context.Context, req *payload.D
 		Provider:              "pay2u",
 		ProviderToken:         inquiry.Token,
 		ChannelCode:           channelCode,
-		URLListenerMerchant:   strings.TrimSpace(req.URLListenerMerchant),
+		URLListenerMerchant:   merchantWebhookURL,
 		URLRedirectMerchant:   strings.TrimSpace(req.URLRedirectMerchant),
 		ExpiredMinutes:        expiredMinutes,
 		Amount:                req.Amount,
@@ -275,7 +273,8 @@ func (u *DisbursementUseCase) TransferBank(ctx context.Context, merchantRef stri
 		Note:                  disbursement.Note,
 		ExpiredMinutes:        disbursement.ExpiredMinutes,
 	}
-	result, err := u.provider.AccountTransfer(ctx, &providerRequest)
+	providerCtx := logger.WithTransactionID(ctx, disbursement.TransactionID)
+	result, err := u.provider.AccountTransfer(providerCtx, &providerRequest)
 	if err != nil {
 		var providerErr *provider.APIError
 		if errors.As(err, &providerErr) {
@@ -389,6 +388,33 @@ func (u *DisbursementUseCase) HandleTransferCallback(ctx context.Context, provid
 		}
 		if callback.ReceiverBank != "" && callback.ReceiverBank != disbursement.BeneficiaryBankCode {
 			return exception.Conflict("provider callback receiver bank does not match the inquiry")
+		}
+		if callback.ReceiverName != "" && callback.ReceiverName != disbursement.BeneficiaryName {
+			return exception.Conflict("provider callback receiver name does not match the inquiry")
+		}
+		if callback.ChannelCode != "" && callback.ChannelCode != disbursement.ChannelCode {
+			return exception.Conflict("provider callback channel_code does not match the inquiry")
+		}
+		if callback.ReceiverBankName != "" && callback.ReceiverBankName != disbursement.BeneficiaryBankName {
+			return exception.Conflict("provider callback receiver bank name does not match the inquiry")
+		}
+		if callback.Amount != nil && *callback.Amount != disbursement.Amount {
+			return exception.Conflict("provider callback amount does not match the inquiry")
+		}
+		if callback.AmountAdmin != nil && *callback.AmountAdmin != disbursement.AmountAdmin {
+			return exception.Conflict("provider callback amount_admin does not match the inquiry")
+		}
+		if callback.AmountDiscount != nil && *callback.AmountDiscount != disbursement.AmountDiscount {
+			return exception.Conflict("provider callback amount_discount does not match the inquiry")
+		}
+		if callback.AmountTotal != nil && *callback.AmountTotal != disbursement.AmountTotal {
+			return exception.Conflict("provider callback amount_total does not match the inquiry")
+		}
+		if callback.Note != "" && callback.Note != disbursement.Note {
+			return exception.Conflict("provider callback note does not match the inquiry")
+		}
+		if callback.ExpiredMinutes != nil && *callback.ExpiredMinutes != disbursement.ExpiredMinutes {
+			return exception.Conflict("provider callback expired_minutes does not match the inquiry")
 		}
 		if newStatus == constants.DisbursementStatusSuccess && callback.AmountPaid != disbursement.AmountTotal {
 			return exception.Conflict("provider callback amount_paid does not match amount_total")
@@ -566,7 +592,7 @@ func calculateDisbursementTotal(amount, amountAdmin, amountDiscount int64) (int6
 	return total, nil
 }
 
-func sameDisbursementRequest(existing *entity.Disbursement, req *payload.DisbursementInquiryRequest, amountTotal int64) bool {
+func sameDisbursementRequest(existing *entity.Disbursement, req *payload.DisbursementInquiryRequest, amountTotal int64, merchantWebhookURL string) bool {
 	return existing.BeneficiaryAccountRef == strings.TrimSpace(req.ReceiverAccount) &&
 		existing.BeneficiaryName == strings.TrimSpace(req.ReceiverName) &&
 		existing.BeneficiaryBankCode == strings.TrimSpace(req.ReceiverBank) &&
@@ -574,21 +600,9 @@ func sameDisbursementRequest(existing *entity.Disbursement, req *payload.Disburs
 		existing.AmountAdmin == req.AmountAdmin &&
 		existing.AmountDiscount == req.AmountDiscount &&
 		existing.AmountTotal == amountTotal && req.AmountTotal == amountTotal &&
-		existing.URLListenerMerchant == strings.TrimSpace(req.URLListenerMerchant) &&
+		existing.URLListenerMerchant == merchantWebhookURL &&
 		existing.URLRedirectMerchant == strings.TrimSpace(req.URLRedirectMerchant) &&
 		existing.Note == strings.TrimSpace(req.Note)
-}
-
-func sameURLOrigin(target, configured string) bool {
-	targetURL, targetErr := url.ParseRequestURI(target)
-	configuredURL, configuredErr := url.ParseRequestURI(configured)
-	if targetErr != nil || configuredErr != nil || targetURL.User != nil || configuredURL.User != nil {
-		return false
-	}
-	if (targetURL.Scheme != "http" && targetURL.Scheme != "https") || targetURL.Fragment != "" {
-		return false
-	}
-	return strings.EqualFold(targetURL.Scheme, configuredURL.Scheme) && strings.EqualFold(targetURL.Host, configuredURL.Host)
 }
 
 func disbursementResponse(disbursement *entity.Disbursement) *payload.DisbursementResponse {
