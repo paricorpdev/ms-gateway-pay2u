@@ -85,8 +85,8 @@ func (u *DisbursementUseCase) InquiryAccount(ctx context.Context, req *payload.D
 	if req.AmountTotal != amountTotal {
 		return nil, exception.BadRequest("amount_total must equal amount + amount_admin - amount_discount")
 	}
-	if amountTotal > transaction.AmountTotal {
-		return nil, exception.BadRequest("amount_total cannot exceed the source transaction amount_total")
+	if req.Amount != transaction.Amount {
+		return nil, exception.BadRequest("amount must equal the source transaction amount")
 	}
 
 	merchantRef := strings.TrimSpace(req.MerchantReff)

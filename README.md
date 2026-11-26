@@ -258,7 +258,7 @@ Apply Dashboard migrations first, then apply MS migrations so the shared `users`
 
 ## Disbursement API
 
-Disbursements are linked to one successful payment transaction owned by the authenticated merchant. The `transaction_id` is required because the existing schema records the source payment on each disbursement. The gateway calculates `amount_total = amount + amount_admin - amount_discount`, and rejects a total greater than the source transaction total.
+Disbursements are linked to one successful payment transaction owned by the authenticated merchant. The `transaction_id` is required because the existing schema records the source payment on each disbursement. The transfer principal (`amount`) must exactly match the source payment's `amount`. The gateway calculates the disbursement `amount_total = amount + amount_admin - amount_discount` separately.
 
 Payment and disbursement endpoints require the merchant's `X-API-Key`. Merchant administration endpoints require the per-user dashboard key stored on the dashboard user record. The Pay2U callback endpoint is public and is correlated using the provider token and `merchant_reff`.
 
