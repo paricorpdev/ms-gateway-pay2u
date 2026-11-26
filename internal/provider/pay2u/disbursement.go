@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -14,25 +15,47 @@ import (
 )
 
 type bankInquiryData struct {
-	Token                 string `json:"token"`
-	MerchantReff          string `json:"merchant_reff"`
-	ReceiverAccountNumber string `json:"receiver_account_number"`
-	ReceiverName          string `json:"receiver_name"`
-	ReceiverBank          string `json:"receiver_bank"`
-	ReceiverBankName      string `json:"receiver_bank_name"`
-	AmountTotal           int64  `json:"amount_total"`
+	Token                 string    `json:"token"`
+	MerchantReff          string    `json:"merchant_reff"`
+	ReceiverAccountNumber string    `json:"receiver_account_number"`
+	ReceiverName          string    `json:"receiver_name"`
+	ReceiverBank          string    `json:"receiver_bank"`
+	ReceiverBankName      string    `json:"receiver_bank_name"`
+	AmountTotal           jsonInt64 `json:"amount_total"`
 }
 
 type bankTransferData struct {
-	Token                 string `json:"token"`
-	MerchantReff          string `json:"merchant_reff"`
-	ReceiverAccountNumber string `json:"receiver_account_number"`
-	ReceiverName          string `json:"receiver_name"`
-	ReceiverBank          string `json:"receiver_bank"`
-	ReceiverBankName      string `json:"receiver_bank_name"`
-	AmountTotal           int64  `json:"amount_total"`
-	ReferenceNo           string `json:"reference_no"`
-	TransactionDate       string `json:"transaction_date"`
+	Token                 string    `json:"token"`
+	MerchantReff          string    `json:"merchant_reff"`
+	ReceiverAccountNumber string    `json:"receiver_account_number"`
+	ReceiverName          string    `json:"receiver_name"`
+	ReceiverBank          string    `json:"receiver_bank"`
+	ReceiverBankName      string    `json:"receiver_bank_name"`
+	AmountTotal           jsonInt64 `json:"amount_total"`
+	ReferenceNo           string    `json:"reference_no"`
+	TransactionDate       string    `json:"transaction_date"`
+}
+
+// jsonInt64 accepts whole-value JSON numbers such as 102500 and 102500.0.
+// Monetary amounts remain integer rupiah; fractional values are rejected.
+type jsonInt64 int64
+
+func (n *jsonInt64) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	value, ok := new(big.Rat).SetString(raw)
+	if !ok || !value.IsInt() || !value.Num().IsInt64() {
+		return fmt.Errorf("expected whole number within int64 range, got %s", raw)
+	}
+	*n = jsonInt64(value.Num().Int64())
+	return nil
+}
+
+func int64Pointer(value *jsonInt64) *int64 {
+	if value == nil {
+		return nil
+	}
+	converted := int64(*value)
+	return &converted
 }
 
 func (c *Client) AccountInquiry(ctx context.Context, input *provider.BankTransferRequest) (*provider.BankInquiryResult, error) {
@@ -91,7 +114,7 @@ func (c *Client) AccountInquiry(ctx context.Context, input *provider.BankTransfe
 			data.ReceiverBank = input.ReceiverBank
 		}
 		if data.AmountTotal == 0 {
-			data.AmountTotal = input.AmountTotal
+			data.AmountTotal = jsonInt64(input.AmountTotal)
 		}
 
 		return &provider.BankInquiryResult{
@@ -101,7 +124,7 @@ func (c *Client) AccountInquiry(ctx context.Context, input *provider.BankTransfe
 			ReceiverName:          data.ReceiverName,
 			ReceiverBank:          data.ReceiverBank,
 			ReceiverBankName:      data.ReceiverBankName,
-			AmountTotal:           data.AmountTotal,
+			AmountTotal:           int64(data.AmountTotal),
 			RawResponse:           rawResponse,
 		}, nil
 	}
@@ -150,7 +173,7 @@ func (c *Client) AccountTransfer(ctx context.Context, request provider.BankTrans
 		data.ReceiverBank = request.ReceiverBank
 	}
 	if data.AmountTotal == 0 {
-		data.AmountTotal = request.AmountTotal
+		data.AmountTotal = jsonInt64(request.AmountTotal)
 	}
 
 	return &provider.BankTransferResult{
@@ -160,7 +183,7 @@ func (c *Client) AccountTransfer(ctx context.Context, request provider.BankTrans
 		ReceiverName:          data.ReceiverName,
 		ReceiverBank:          data.ReceiverBank,
 		ReceiverBankName:      data.ReceiverBankName,
-		AmountTotal:           data.AmountTotal,
+		AmountTotal:           int64(data.AmountTotal),
 		ReferenceNo:           data.ReferenceNo,
 		TransactionDate:       data.TransactionDate,
 		RawResponse:           rawResponse,
@@ -232,23 +255,23 @@ func (p *Provider) AccountTransfer(ctx context.Context, req *provider.BankTransf
 
 func (p *Provider) ParseTransferCallback(raw []byte) (*provider.BankTransferCallbackResult, error) {
 	var callback struct {
-		Token                 string  `json:"token"`
-		MerchantReff          string  `json:"merchant_reff"`
-		ChannelCode           string  `json:"channel_code"`
-		ReceiverAccountNumber string  `json:"receiver_account_number"`
-		ReceiverName          string  `json:"receiver_name"`
-		ReceiverBank          string  `json:"receiver_bank"`
-		ReceiverBankName      string  `json:"receiver_bank_name"`
-		Amount                *int64  `json:"amount"`
-		AmountAdmin           *int64  `json:"amount_admin"`
-		AmountDiscount        *int64  `json:"amount_discount"`
-		AmountTotal           *int64  `json:"amount_total"`
-		AmountPaid            float64 `json:"amount_paid"`
-		Note                  string  `json:"note"`
-		Status                int     `json:"status"`
-		TransferDate          string  `json:"transfer_date"`
-		ReferenceNo           string  `json:"reference_no"`
-		ExpiredMinutes        *int    `json:"expired_minutes"`
+		Token                 string     `json:"token"`
+		MerchantReff          string     `json:"merchant_reff"`
+		ChannelCode           string     `json:"channel_code"`
+		ReceiverAccountNumber string     `json:"receiver_account_number"`
+		ReceiverName          string     `json:"receiver_name"`
+		ReceiverBank          string     `json:"receiver_bank"`
+		ReceiverBankName      string     `json:"receiver_bank_name"`
+		Amount                *jsonInt64 `json:"amount"`
+		AmountAdmin           *jsonInt64 `json:"amount_admin"`
+		AmountDiscount        *jsonInt64 `json:"amount_discount"`
+		AmountTotal           *jsonInt64 `json:"amount_total"`
+		AmountPaid            jsonInt64  `json:"amount_paid"`
+		Note                  string     `json:"note"`
+		Status                int        `json:"status"`
+		TransferDate          string     `json:"transfer_date"`
+		ReferenceNo           string     `json:"reference_no"`
+		ExpiredMinutes        *int       `json:"expired_minutes"`
 	}
 	if err := json.Unmarshal(raw, &callback); err != nil {
 		return nil, fmt.Errorf("decode account transfer callback: %w", err)
@@ -264,10 +287,10 @@ func (p *Provider) ParseTransferCallback(raw []byte) (*provider.BankTransferCall
 		ReceiverName:          callback.ReceiverName,
 		ReceiverBank:          callback.ReceiverBank,
 		ReceiverBankName:      callback.ReceiverBankName,
-		Amount:                callback.Amount,
-		AmountAdmin:           callback.AmountAdmin,
-		AmountDiscount:        callback.AmountDiscount,
-		AmountTotal:           callback.AmountTotal,
+		Amount:                int64Pointer(callback.Amount),
+		AmountAdmin:           int64Pointer(callback.AmountAdmin),
+		AmountDiscount:        int64Pointer(callback.AmountDiscount),
+		AmountTotal:           int64Pointer(callback.AmountTotal),
 		AmountPaid:            int64(callback.AmountPaid),
 		Note:                  callback.Note,
 		Status:                callback.Status,
