@@ -64,7 +64,7 @@ You can also specify an explicit configuration path via `CONFIG_FILE` (absolute 
 | Application | `app.timezone` | `Asia/Jakarta` | Local server timezone |
 | Application | `app.shutdown_timeout` | `15s` | Maximum time allowed for graceful shutdown |
 | HTTP Server | `web.host` | `0.0.0.0` | Bind IP address |
-| HTTP Server | `web.port` | `8080` | Bind port number |
+| HTTP Server | `web.port` | `8081` | Bind port number |
 | HTTP Server | `web.request_timeout` | `30s` | Request deadline enforced by timeout middleware |
 | HTTP Server | `web.rate_limit.enabled` | `true` | Rate limiting toggle |
 | HTTP Server | `web.rate_limit.max` | `120` | Max requests allowed per expiration window |
@@ -73,18 +73,17 @@ You can also specify an explicit configuration path via `CONFIG_FILE` (absolute 
 | Logging | `log.format` | `json` | Log format (`json` or `text`) |
 | PostgreSQL | `database.postgresql.host` | `localhost` | Database host |
 | PostgreSQL | `database.postgresql.port` | `5432` | Database port |
-| PostgreSQL | `database.postgresql.name` | `paygate` | Database name |
+| PostgreSQL | `database.postgresql.name` | `pay2u` | Database name; must match the Dashboard backend database so per-user dashboard keys can be validated |
 | PostgreSQL | `database.postgresql.pool.max` | `100` | Maximum open database connections |
 | Redis | `database.redis.host` | `localhost` | Redis host |
 | Redis | `database.redis.port` | `6379` | Redis port |
-| Security | `api_key` | `dev-api-key-change-me` | Master API key used to access admin endpoints |
 | Provider (Pay2U) | `pay2u.sandbox` | `true` | Sandbox mode switch |
 | Provider (Pay2U) | `pay2u.base_url_sandbox` | `https://api-dev.pay2u.co.id` | Pay2U sandbox API root |
 | Provider (Pay2U) | `pay2u.base_url_production` | `https://api.pay2u.co.id` | Pay2U production API root |
 | Provider (Pay2U) | `pay2u.client_id` | - | OAuth client ID provided by Pay2U |
 | Provider (Pay2U) | `pay2u.client_secret` | - | OAuth client secret provided by Pay2U |
 | Provider (Pay2U) | `pay2u.merchant_code` | - | Merchant code assigned by Pay2U |
-| Provider (Pay2U) | `pay2u.callback_base_url` | `http://localhost:8080` | Public base URL where Pay2U sends payment notifications |
+| Provider (Pay2U) | `pay2u.callback_base_url` | `http://localhost:8081` | Public base URL where Pay2U sends payment notifications |
 
 ## Quick Start
 
@@ -147,19 +146,19 @@ The server starts on `http://0.0.0.0:8080`.
 Check service liveness:
 
 ```bash
-curl -i http://localhost:8080/health/live
+curl -i http://localhost:8081/health/live
 ```
 
 Check database and Redis readiness:
 
 ```bash
-curl -i http://localhost:8080/health/ready
+curl -i http://localhost:8081/health/ready
 ```
 
 Access OpenAPI documentation in your browser:
 
 ```text
-http://localhost:8080/api/v1/docs/index.html
+http://localhost:8081/api/v1/docs/index.html
 ```
 
 ### Additional Make Targets
@@ -238,6 +237,78 @@ Client Application / Webhook Caller
 │ • inbound_requests                     │
 │ • outbound_requests                    │
 └────────────────────────────────────────┘
+```
+
+## Merchant Administration API
+
+Dashboard merchant reads and writes use these MS endpoints. Requests require the signed-in dashboard user's `X-API-Key`, stored in `users.ms_master_key` in the shared PostgreSQL database. Configure `database.postgresql` in both services to point to that same database; there is no global master key in MS configuration. When an Admin creates a merchant, MS derives `admin_id` from the authenticated key and stores the foreign key to `users.id`. Admin keys can list and change only their own merchants; Super Admin keys are read-only and can view all merchants. Existing merchants remain unassigned (`admin_id` is null) because their original owner is unknown.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/v1/admin/merchants/` | Create a merchant and issue its API key and webhook secret |
+| `GET` | `/api/v1/admin/merchants/?page=1&per_page=10` | List merchants; supports `search`, `is_active`, `sort_by`, and `sort_dir` |
+| `GET` | `/api/v1/admin/merchants/:uuid` | Read merchant details |
+| `PUT` | `/api/v1/admin/merchants/:uuid` | Update merchant name, webhook URL, or active state |
+| `POST` | `/api/v1/admin/merchants/:uuid/rotate-key` | Rotate the merchant API key |
+| `POST` | `/api/v1/admin/merchants/:uuid/rotate-webhook-secret` | Rotate the webhook secret |
+
+The Dashboard backend stores the MS base URL under `ms_gateway.base_url` in its own `config.yml`. Credential rotation remains available only through this MS administration API.
+
+Apply Dashboard migrations first, then apply MS migrations so the shared `users` table exists before migration `000010_add_admin_id_to_merchants` creates its foreign key. The `admin_id` column is nullable for historical merchants whose owner cannot be determined; all merchants created through Dashboard receive an Admin owner.
+
+## Disbursement API
+
+Disbursements are linked to one successful payment transaction owned by the authenticated merchant. The `transaction_id` is required because the existing schema records the source payment on each disbursement. The gateway calculates `amount_total = amount + amount_admin - amount_discount`, and rejects a total greater than the source transaction total.
+
+Payment and disbursement endpoints require the merchant's `X-API-Key`. Merchant administration endpoints require the per-user dashboard key stored on the dashboard user record. The Pay2U callback endpoint is public and is correlated using the provider token and `merchant_reff`.
+
+### 1. Account inquiry
+
+`POST /api/v1/disbursements/inquiry`
+
+```json
+{
+  "transaction_id": "3f88f847-7237-42d7-9d52-4383a9558701",
+  "merchant_reff": "payout-2026-0001",
+  "channel_code": "TF-MITRA",
+  "url_listener_merchant": "https://merchant.example.com/pay2u/disbursement-callback",
+  "url_redirect_merchant": "https://merchant.example.com/payouts/return",
+  "receiver_account_number": "1234567890",
+  "receiver_name": "Recipient Name",
+  "receiver_bank": "014",
+  "amount": 100000,
+  "amount_admin": 2500,
+  "amount_discount": 0,
+  "amount_total": 102500,
+  "note": "Payout order 2026-0001",
+  "expired_minutes": 30
+}
+```
+
+`amount_total` must equal `amount + amount_admin - amount_discount`. `channel_code` defaults to `TF-MITRA`, and `expired_minutes` defaults to 30. The listener URL is saved on the disbursement and receives the final notification; its origin must match the merchant's configured `webhook_url`. Pay2U itself is configured to call the gateway callback at `{pay2u.callback_base_url}/api/v1/disbursements/callback/pay2u`.
+
+The inquiry response contains the disbursement record in `WAITING_SETTLEMENT`. The Pay2U provider token stays inside the gateway and is reused for transfer.
+
+### 2. Submit bank transfer
+
+`POST /api/v1/disbursements/{merchant_reff}/transfer`
+
+No body is required. The gateway submits the saved inquiry details once and returns `PROCESSING` while it waits for Pay2U's transfer notification. Repeating this call will not submit a second transfer.
+
+### 3. Check status
+
+`GET /api/v1/disbursements/{merchant_reff}`
+
+Returns the latest disbursement status and provider reference number when available.
+
+### Pay2U transfer callback
+
+Pay2U calls `POST /api/v1/disbursements/callback/pay2u`. The gateway validates the token/reference pair and, for success notifications, checks `amount_paid` against the saved `amount_total`. It then updates the record and forwards the FSD callback fields to `url_listener_merchant`, with `X-Paygate-Signature` when the merchant has a webhook secret.
+
+Configure the Pay2U paths in `config.yml` under `pay2u.transfer_bank_inquiry_url` and `pay2u.transfer_bank_url`, and set `pay2u.callback_base_url` to a public base URL for this service. Apply the new `000009_create_disbursements_table` migration before starting the new endpoints:
+
+```sh
+go run ./cmd/migrate up
 ```
 
 ## Response Format

@@ -3,9 +3,11 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"paygate/internal/entity"
 	"paygate/internal/exception"
+	"paygate/internal/model/payload"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -54,23 +56,49 @@ func (r *merchantRepository) FindByCode(ctx context.Context, db *gorm.DB, code s
 	return &m, nil
 }
 
-func (r *merchantRepository) FindAll(ctx context.Context, db *gorm.DB, limit, offset int) ([]*entity.Merchant, int64, error) {
+func (r *merchantRepository) FindAll(ctx context.Context, db *gorm.DB, request payload.MerchantListRequest) ([]*entity.Merchant, int64, error) {
 	var merchants []*entity.Merchant
 	var total int64
 
 	q := db.WithContext(ctx).Model(&entity.Merchant{})
+	if request.Search != "" {
+		pattern := "%" + strings.TrimSpace(request.Search) + "%"
+		q = q.Where("name ILIKE ? OR code ILIKE ?", pattern, pattern)
+	}
+	if request.IsActive != nil {
+		q = q.Where("is_active = ?", *request.IsActive)
+	}
+	if request.AdminID != nil {
+		q = q.Where("admin_id = ?", *request.AdminID)
+	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	if limit <= 0 {
-		limit = 10
+	if request.PerPage <= 0 {
+		request.PerPage = payload.DefaultPerPage
 	}
-	if offset < 0 {
-		offset = 0
+	if request.PerPage > payload.MaxPerPage {
+		request.PerPage = payload.MaxPerPage
 	}
+	if request.Page <= 0 {
+		request.Page = payload.DefaultPage
+	}
+	if request.SortDir != "asc" && request.SortDir != "ASC" {
+		request.SortDir = "DESC"
+	}
+	sortBy := map[string]string{
+		"created_at": "created_at",
+		"updated_at": "updated_at",
+		"name":       "name",
+		"code":       "code",
+	}[strings.ToLower(request.SortBy)]
+	if sortBy == "" {
+		sortBy = "created_at"
+	}
+	offset := (request.Page - 1) * request.PerPage
 
-	if err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&merchants).Error; err != nil {
+	if err := q.Order(sortBy + " " + strings.ToUpper(request.SortDir)).Limit(request.PerPage).Offset(offset).Find(&merchants).Error; err != nil {
 		return nil, 0, err
 	}
 

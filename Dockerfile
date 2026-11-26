@@ -43,6 +43,6 @@ COPY --from=builder --chown=app:app \
 
 USER app
 
-EXPOSE 8080
+EXPOSE 8081
 
 ENTRYPOINT ["/app/paygate"]

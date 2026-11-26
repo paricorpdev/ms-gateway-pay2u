@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"paygate/internal/entity"
+	"paygate/internal/model/payload"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -44,7 +45,17 @@ type MerchantRepository interface {
 	FindByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*entity.Merchant, error)
 	FindByAPIKey(ctx context.Context, db *gorm.DB, apiKey string) (*entity.Merchant, error)
 	FindByCode(ctx context.Context, db *gorm.DB, code string) (*entity.Merchant, error)
-	FindAll(ctx context.Context, db *gorm.DB, limit, offset int) ([]*entity.Merchant, int64, error)
+	FindAll(ctx context.Context, db *gorm.DB, request payload.MerchantListRequest) ([]*entity.Merchant, int64, error)
+	Update(ctx context.Context, db *gorm.DB, id uuid.UUID, updates map[string]any) error
+}
+
+type DisbursementRepository interface {
+	Create(ctx context.Context, db *gorm.DB, disbursement *entity.Disbursement) error
+	FindByMerchantAndTransactionID(ctx context.Context, db *gorm.DB, merchantID, transactionID uuid.UUID) (*entity.Disbursement, error)
+	FindByMerchantAndRef(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, merchantRef string) (*entity.Disbursement, error)
+	FindByMerchantAndRefForUpdate(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, merchantRef string) (*entity.Disbursement, error)
+	FindByProviderTokenAndRef(ctx context.Context, db *gorm.DB, token, merchantRef string) (*entity.Disbursement, error)
+	FindByProviderTokenAndRefForUpdate(ctx context.Context, db *gorm.DB, token, merchantRef string) (*entity.Disbursement, error)
 	Update(ctx context.Context, db *gorm.DB, id uuid.UUID, updates map[string]any) error
 }
 
@@ -64,5 +75,6 @@ var (
 	_ CacheRepository           = (*redisRepository)(nil)
 	_ AuditLogRepository        = (*auditLogRepository)(nil)
 	_ MerchantRepository        = (*merchantRepository)(nil)
+	_ DisbursementRepository    = (*disbursementRepository)(nil)
 	_ WebhookDispatchRepository = (*webhookDispatchRepository)(nil)
 )

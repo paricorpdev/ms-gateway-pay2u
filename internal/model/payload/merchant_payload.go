@@ -18,14 +18,25 @@ type UpdateMerchantRequest struct {
 	IsActive   *bool   `json:"is_active"`
 }
 
+type MerchantListRequest struct {
+	Page     int
+	PerPage  int
+	Search   string
+	IsActive *bool
+	SortBy   string
+	SortDir  string
+	AdminID  *uuid.UUID
+}
+
 type MerchantResponse struct {
-	ID            uuid.UUID `json:"id"`
-	Code          string    `json:"code"`
-	Name          string    `json:"name"`
-	APIKey        string    `json:"api_key"`
-	WebhookURL    string    `json:"webhook_url,omitempty"`
-	WebhookSecret string    `json:"webhook_secret,omitempty"`
-	IsActive      bool      `json:"is_active"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            uuid.UUID  `json:"id"`
+	Code          string     `json:"code"`
+	Name          string     `json:"name"`
+	AdminID       *uuid.UUID `json:"admin_id,omitempty"`
+	APIKey        string     `json:"api_key"`
+	WebhookURL    string     `json:"webhook_url,omitempty"`
+	WebhookSecret string     `json:"webhook_secret,omitempty"`
+	IsActive      bool       `json:"is_active"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }

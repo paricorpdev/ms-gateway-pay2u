@@ -1,15 +1,22 @@
 package constants
 
 const (
-	LocalsRequestID     = "requestId"
-	LocalsLogger        = "logger"
-	LocalsTransactionID = "transactionId"
-	LocalsMerchant      = "merchant"
-	LocalsMerchantCode  = "merchantCode"
+	LocalsRequestID       = "requestId"
+	LocalsLogger          = "logger"
+	LocalsTransactionID   = "transactionId"
+	LocalsMerchant        = "merchant"
+	LocalsMerchantCode    = "merchantCode"
+	LocalsDashboardRoles  = "dashboardRoles"
+	LocalsDashboardUserID = "dashboardUserId"
 )
 
 const HeaderRequestID = "X-Request-Id"
 const HeaderAPIKey = "X-API-Key"
+
+const (
+	DashboardRoleAdmin      = "ROLE_ADMIN"
+	DashboardRoleSuperAdmin = "ROLE_SUPER_ADMIN"
+)
 
 const (
 	StatusSuccess = "success"
@@ -38,10 +45,13 @@ const (
 )
 
 const (
-	WebhookEventPaymentSuccess = "payment.success"
-	WebhookEventPaymentFailed  = "payment.failed"
-	WebhookEventPaymentExpired = "payment.expired"
-	WebhookEventPaymentRefund  = "payment.refund"
+	WebhookEventPaymentSuccess       = "payment.success"
+	WebhookEventPaymentFailed        = "payment.failed"
+	WebhookEventPaymentExpired       = "payment.expired"
+	WebhookEventPaymentRefund        = "payment.refund"
+	WebhookEventDisbursementSuccess  = "disbursement.success"
+	WebhookEventDisbursementFailed   = "disbursement.failed"
+	WebhookEventDisbursementReversed = "disbursement.reversed"
 )
 
 const (

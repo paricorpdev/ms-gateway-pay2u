@@ -48,7 +48,10 @@ func (u *MerchantUseCase) cacheMerchant(ctx context.Context, m *entity.Merchant)
 	}
 }
 
-func (u *MerchantUseCase) CreateMerchant(ctx context.Context, req *payload.CreateMerchantRequest) (*payload.MerchantResponse, error) {
+func (u *MerchantUseCase) CreateMerchant(ctx context.Context, adminID uuid.UUID, req *payload.CreateMerchantRequest) (*payload.MerchantResponse, error) {
+	if adminID == uuid.Nil {
+		return nil, exception.Unauthorized("dashboard admin identity is required")
+	}
 	code := req.Code
 	if code == "" {
 		code = generator.NormalizeCode(req.Name)
@@ -79,10 +82,12 @@ func (u *MerchantUseCase) CreateMerchant(ctx context.Context, req *payload.Creat
 	}
 
 	now := time.Now().UTC()
+	ownerID := adminID
 	merchant := &entity.Merchant{
 		ID:            uuid.New(),
 		Code:          code,
 		Name:          req.Name,
+		AdminID:       &ownerID,
 		APIKey:        apiKey,
 		WebhookURL:    req.WebhookURL,
 		WebhookSecret: webhookSecret,
@@ -100,18 +105,26 @@ func (u *MerchantUseCase) CreateMerchant(ctx context.Context, req *payload.Creat
 	return u.toMerchantResponse(merchant), nil
 }
 
-func (u *MerchantUseCase) GetMerchant(ctx context.Context, id uuid.UUID) (*payload.MerchantResponse, error) {
-	m, err := u.merchantRepo.FindByID(ctx, u.db, id)
+func (u *MerchantUseCase) GetMerchant(ctx context.Context, id uuid.UUID, adminID *uuid.UUID) (*payload.MerchantResponse, error) {
+	m, err := u.findMerchant(ctx, id, adminID)
 	if err != nil {
 		return nil, err
 	}
 	return u.toMerchantResponse(m), nil
 }
 
-func (u *MerchantUseCase) ListMerchants(ctx context.Context, req payload.PageRequest) (*payload.PageResponse[*payload.MerchantResponse], error) {
-	req.Normalize()
+func (u *MerchantUseCase) ListMerchants(ctx context.Context, req payload.MerchantListRequest) (*payload.PageResponse[*payload.MerchantResponse], error) {
+	if req.Page < 1 {
+		req.Page = payload.DefaultPage
+	}
+	if req.PerPage < 1 {
+		req.PerPage = payload.DefaultPerPage
+	}
+	if req.PerPage > payload.MaxPerPage {
+		req.PerPage = payload.MaxPerPage
+	}
 
-	merchants, total, err := u.merchantRepo.FindAll(ctx, u.db, req.PerPage, req.Offset())
+	merchants, total, err := u.merchantRepo.FindAll(ctx, u.db, req)
 	if err != nil {
 		return nil, exception.Internal(err)
 	}
@@ -124,8 +137,8 @@ func (u *MerchantUseCase) ListMerchants(ctx context.Context, req payload.PageReq
 	return payload.NewPageResponse(responses, req.Page, req.PerPage, total), nil
 }
 
-func (u *MerchantUseCase) UpdateMerchant(ctx context.Context, id uuid.UUID, req *payload.UpdateMerchantRequest) (*payload.MerchantResponse, error) {
-	m, err := u.merchantRepo.FindByID(ctx, u.db, id)
+func (u *MerchantUseCase) UpdateMerchant(ctx context.Context, id uuid.UUID, adminID *uuid.UUID, req *payload.UpdateMerchantRequest) (*payload.MerchantResponse, error) {
+	m, err := u.findMerchant(ctx, id, adminID)
 	if err != nil {
 		return nil, err
 	}
@@ -162,8 +175,8 @@ func (u *MerchantUseCase) UpdateMerchant(ctx context.Context, id uuid.UUID, req 
 	return u.toMerchantResponse(updated), nil
 }
 
-func (u *MerchantUseCase) RotateAPIKey(ctx context.Context, id uuid.UUID) (*payload.MerchantResponse, error) {
-	m, err := u.merchantRepo.FindByID(ctx, u.db, id)
+func (u *MerchantUseCase) RotateAPIKey(ctx context.Context, id uuid.UUID, adminID *uuid.UUID) (*payload.MerchantResponse, error) {
+	m, err := u.findMerchant(ctx, id, adminID)
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +203,34 @@ func (u *MerchantUseCase) RotateAPIKey(ctx context.Context, id uuid.UUID) (*payl
 	m.APIKey = newKey
 	m.UpdatedAt = now
 
+	if m.IsActive {
+		u.cacheMerchant(ctx, m)
+	}
+
+	return u.toMerchantResponse(m), nil
+}
+
+func (u *MerchantUseCase) RotateWebhookSecret(ctx context.Context, id uuid.UUID, adminID *uuid.UUID) (*payload.MerchantResponse, error) {
+	m, err := u.findMerchant(ctx, id, adminID)
+	if err != nil {
+		return nil, err
+	}
+
+	newSecret, err := generator.GenerateWebhookSecret()
+	if err != nil {
+		return nil, exception.Internal(fmt.Errorf("generate webhook secret: %w", err))
+	}
+
+	now := time.Now().UTC()
+	if err := u.merchantRepo.Update(ctx, u.db, id, map[string]any{
+		"webhook_secret": newSecret,
+		"updated_at":     now,
+	}); err != nil {
+		return nil, err
+	}
+
+	m.WebhookSecret = newSecret
+	m.UpdatedAt = now
 	if m.IsActive {
 		u.cacheMerchant(ctx, m)
 	}
@@ -235,6 +276,7 @@ func (u *MerchantUseCase) toMerchantResponse(m *entity.Merchant) *payload.Mercha
 		ID:            m.ID,
 		Code:          m.Code,
 		Name:          m.Name,
+		AdminID:       m.AdminID,
 		APIKey:        m.APIKey,
 		WebhookURL:    m.WebhookURL,
 		WebhookSecret: m.WebhookSecret,
@@ -242,4 +284,15 @@ func (u *MerchantUseCase) toMerchantResponse(m *entity.Merchant) *payload.Mercha
 		CreatedAt:     m.CreatedAt,
 		UpdatedAt:     m.UpdatedAt,
 	}
+}
+
+func (u *MerchantUseCase) findMerchant(ctx context.Context, id uuid.UUID, adminID *uuid.UUID) (*entity.Merchant, error) {
+	merchant, err := u.merchantRepo.FindByID(ctx, u.db, id)
+	if err != nil {
+		return nil, err
+	}
+	if adminID != nil && (merchant.AdminID == nil || *merchant.AdminID != *adminID) {
+		return nil, exception.NotFound("merchant not found")
+	}
+	return merchant, nil
 }

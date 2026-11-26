@@ -21,22 +21,24 @@ import (
 )
 
 type Config struct {
-	BaseURL         string
-	OAuthURL        string
-	TokenURL        string
-	BillingVAURL    string
-	BillingQRISURL  string
-	BillingCCURL    string
-	BillingGetURL   string
-	ClientID        string
-	ClientSecret    string
-	MerchantCode    string
-	MerchantUser    string
-	MerchantPass    string
-	MerchantDomain  string
-	Timeout         time.Duration
-	OAuthTokenTTL   time.Duration
-	CallbackBaseURL string
+	BaseURL                string
+	OAuthURL               string
+	TokenURL               string
+	BillingVAURL           string
+	BillingQRISURL         string
+	BillingCCURL           string
+	BillingGetURL          string
+	TransferBankInquiryURL string
+	TransferBankURL        string
+	ClientID               string
+	ClientSecret           string
+	MerchantCode           string
+	MerchantUser           string
+	MerchantPass           string
+	MerchantDomain         string
+	Timeout                time.Duration
+	OAuthTokenTTL          time.Duration
+	CallbackBaseURL        string
 }
 
 type pay2uResponse struct {

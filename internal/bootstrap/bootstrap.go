@@ -36,6 +36,7 @@ type Dependencies struct {
 
 type Container struct {
 	Payment      usecase.PaymentService
+	Disbursement usecase.DisbursementService
 	Merchant     usecase.MerchantService
 	AuditWorker  *audit.AuditWorker
 	Dispatcher   webhook.Dispatcher
@@ -59,24 +60,26 @@ func NewContainer(deps *Dependencies) *Container {
 	}
 
 	// Load Configuration Provider Pay2u, etc.
-	
+
 	pay2uCfg := pay2u.Config{
-		BaseURL:         deps.Config.Pay2U.BaseURL(),
-		OAuthURL:        deps.Config.Pay2U.OAuthURL,
-		TokenURL:        deps.Config.Pay2U.TokenURL,
-		BillingVAURL:    deps.Config.Pay2U.BillingVAURL,
-		BillingQRISURL:  deps.Config.Pay2U.BillingQRISURL,
-		BillingCCURL:    deps.Config.Pay2U.BillingCCURL,
-		BillingGetURL:   deps.Config.Pay2U.BillingGetURL,
-		ClientID:        deps.Config.Pay2U.ClientID,
-		ClientSecret:    deps.Config.Pay2U.ClientSecret,
-		MerchantCode:    deps.Config.Pay2U.MerchantCode,
-		MerchantUser:    deps.Config.Pay2U.MerchantUser,
-		MerchantPass:    deps.Config.Pay2U.MerchantPass,
-		MerchantDomain:  deps.Config.Pay2U.MerchantDomain,
-		Timeout:         deps.Config.Pay2U.Timeout,
-		OAuthTokenTTL:   deps.Config.Pay2U.OAuthTokenTTL,
-		CallbackBaseURL: deps.Config.Pay2U.CallbackBaseURL,
+		BaseURL:                deps.Config.Pay2U.BaseURL(),
+		OAuthURL:               deps.Config.Pay2U.OAuthURL,
+		TokenURL:               deps.Config.Pay2U.TokenURL,
+		BillingVAURL:           deps.Config.Pay2U.BillingVAURL,
+		BillingQRISURL:         deps.Config.Pay2U.BillingQRISURL,
+		BillingCCURL:           deps.Config.Pay2U.BillingCCURL,
+		BillingGetURL:          deps.Config.Pay2U.BillingGetURL,
+		TransferBankInquiryURL: deps.Config.Pay2U.TransferBankInquiryURL,
+		TransferBankURL:        deps.Config.Pay2U.TransferBankURL,
+		ClientID:               deps.Config.Pay2U.ClientID,
+		ClientSecret:           deps.Config.Pay2U.ClientSecret,
+		MerchantCode:           deps.Config.Pay2U.MerchantCode,
+		MerchantUser:           deps.Config.Pay2U.MerchantUser,
+		MerchantPass:           deps.Config.Pay2U.MerchantPass,
+		MerchantDomain:         deps.Config.Pay2U.MerchantDomain,
+		Timeout:                deps.Config.Pay2U.Timeout,
+		OAuthTokenTTL:          deps.Config.Pay2U.OAuthTokenTTL,
+		CallbackBaseURL:        deps.Config.Pay2U.CallbackBaseURL,
 	}
 
 	pay2uClient := pay2u.NewClient(pay2uCfg, cache, auditWorker)
@@ -87,6 +90,7 @@ func NewContainer(deps *Dependencies) *Container {
 	}
 
 	txRepo := repository.NewTransactionRepository()
+	disbursementRepo := repository.NewDisbursementRepository()
 	merchantRepo := repository.NewMerchantRepository()
 	merchantUC := usecase.NewMerchantUseCase(deps.DB, merchantRepo, cache)
 
@@ -112,9 +116,19 @@ func NewContainer(deps *Dependencies) *Container {
 		providers,
 		cache,
 	)
+	disbursementUC := usecase.NewDisbursementUseCase(
+		deps.DB,
+		disbursementRepo,
+		txRepo,
+		merchantRepo,
+		pay2uProvider,
+		dispatchRepo,
+		dispatcher,
+	)
 
 	return &Container{
 		Payment:      paymentUC,
+		Disbursement: disbursementUC,
 		Merchant:     merchantUC,
 		AuditWorker:  auditWorker,
 		Dispatcher:   dispatcher,
@@ -127,15 +141,16 @@ func NewContainer(deps *Dependencies) *Container {
 
 func HTTP(deps *Dependencies, container *Container) {
 	routeConfig := route.RouteConfig{
-		App:                 deps.App,
-		Config:              deps.Config,
-		Log:                 deps.Log,
-		PaymentController:   controller.NewPaymentController(container.Payment),
-		MerchantController:  controller.NewMerchantController(container.Merchant),
-		HealthController:    newHealthController(deps),
-		APIKeyMiddleware:    middleware.NewMerchantAPIKey(container.Merchant),
-		MasterKeyMiddleware: middleware.NewMasterAPIKey(deps.Config.APIKey),
-		AuditWorker:         container.AuditWorker,
+		App:                        deps.App,
+		Config:                     deps.Config,
+		Log:                        deps.Log,
+		PaymentController:          controller.NewPaymentController(container.Payment),
+		DisbursementController:     controller.NewDisbursementController(container.Disbursement),
+		MerchantController:         controller.NewMerchantController(container.Merchant),
+		HealthController:           newHealthController(deps),
+		APIKeyMiddleware:           middleware.NewMerchantAPIKey(container.Merchant),
+		DashboardUserKeyMiddleware: middleware.NewDashboardUserKey(deps.DB),
+		AuditWorker:                container.AuditWorker,
 	}
 	routeConfig.Setup()
 }

@@ -25,13 +25,14 @@ type RouteConfig struct {
 	Config *config.Config
 	Log    *logrus.Logger
 
-	APIKeyMiddleware    fiber.Handler
-	MasterKeyMiddleware fiber.Handler
-	AuditWorker         *audit.AuditWorker
+	APIKeyMiddleware           fiber.Handler
+	DashboardUserKeyMiddleware fiber.Handler
+	AuditWorker                *audit.AuditWorker
 
-	PaymentController  *controller.PaymentController
-	MerchantController *controller.MerchantController
-	HealthController   *controller.HealthController
+	PaymentController      *controller.PaymentController
+	DisbursementController *controller.DisbursementController
+	MerchantController     *controller.MerchantController
+	HealthController       *controller.HealthController
 }
 
 func (c *RouteConfig) Setup() {
@@ -110,6 +111,10 @@ func (c *RouteConfig) setupPublicRoutes() {
 		v1 := c.App.Group("/api/v1")
 		v1.Post("/payments/callback/:provider", c.PaymentController.HandleCallback)
 	}
+	if c.DisbursementController != nil {
+		v1 := c.App.Group("/api/v1")
+		v1.Post("/disbursements/callback/:provider", c.DisbursementController.HandleCallback)
+	}
 }
 
 func (c *RouteConfig) setupProtectedRoutes() {
@@ -125,20 +130,26 @@ func (c *RouteConfig) setupProtectedRoutes() {
 		payments.Post("/:merchant_reff/refresh", c.PaymentController.RefreshPayment)
 	}
 
-	if c.MerchantController != nil {
-		var adminAuthHandlers []fiber.Handler
-		if c.MasterKeyMiddleware != nil {
-			adminAuthHandlers = append(adminAuthHandlers, c.MasterKeyMiddleware)
-		} else if c.APIKeyMiddleware != nil {
-			adminAuthHandlers = append(adminAuthHandlers, c.APIKeyMiddleware)
+	if c.DisbursementController != nil {
+		var disbursementAuthHandlers []fiber.Handler
+		if c.APIKeyMiddleware != nil {
+			disbursementAuthHandlers = append(disbursementAuthHandlers, c.APIKeyMiddleware)
 		}
 
-		admin := c.App.Group("/api/v1/admin/merchants", adminAuthHandlers...)
-		admin.Post("/", c.MerchantController.CreateMerchant)
+		disbursements := c.App.Group("/api/v1/disbursements", disbursementAuthHandlers...)
+		disbursements.Post("/inquiry", c.DisbursementController.InquiryAccount)
+		disbursements.Post("/:merchant_reff/transfer", c.DisbursementController.TransferBank)
+		disbursements.Get("/:merchant_reff", c.DisbursementController.GetDisbursement)
+	}
+
+	if c.MerchantController != nil {
+		admin := c.App.Group("/api/v1/admin/merchants", c.DashboardUserKeyMiddleware)
+		admin.Post("/", middleware.RequireDashboardAdmin(), c.MerchantController.CreateMerchant)
 		admin.Get("/", c.MerchantController.ListMerchants)
 		admin.Get("/:uuid", c.MerchantController.GetMerchant)
-		admin.Put("/:uuid", c.MerchantController.UpdateMerchant)
-		admin.Post("/:uuid/rotate-key", c.MerchantController.RotateAPIKey)
+		admin.Put("/:uuid", middleware.RequireDashboardAdmin(), c.MerchantController.UpdateMerchant)
+		admin.Post("/:uuid/rotate-key", middleware.RequireDashboardAdmin(), c.MerchantController.RotateAPIKey)
+		admin.Post("/:uuid/rotate-webhook-secret", middleware.RequireDashboardAdmin(), c.MerchantController.RotateWebhookSecret)
 	}
 }
 
