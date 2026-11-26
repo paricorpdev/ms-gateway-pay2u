@@ -108,19 +108,31 @@ Open `config.yml` and enter your PostgreSQL credentials, Redis connection settin
 
 ### Step 2: Run Database Migrations
 
-Apply the database schema to your PostgreSQL instance:
+Apply the database schema to the PostgreSQL instance configured in `config.yml`:
 
 ```bash
-make migrate-up DATABASE_URL="postgresql://postgres:password@localhost:5432/paygate?sslmode=disable"
+go run ./cmd/migrate up
 ```
 
-To roll back migrations:
+To roll back only the latest migration:
 
 ```bash
-make migrate-down DATABASE_URL="postgresql://postgres:password@localhost:5432/paygate?sslmode=disable"
+go run ./cmd/migrate down 1
 ```
 
-### Step 3: Start the Service
+The migration runner invokes the `migrate` CLI, which must be installed and available on `PATH`. Install it with `go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`, or use the existing `make check-migrate` target.
+
+### Step 3: Seed a Demo Merchant
+
+Set the merchant fields under `seed.merchant` in `config.yml` (defaults are in `config.yml.example`), then run:
+
+```bash
+go run ./cmd/seed
+```
+
+The seeder creates the merchant only if its code does not already exist. It generates an API key and webhook secret on first creation and prints them once; re-running it leaves existing credentials unchanged.
+
+### Step 4: Start the Service
 
 Run the API service:
 
@@ -130,7 +142,7 @@ make run-api
 
 The server starts on `http://0.0.0.0:8080`.
 
-### Step 4: Verify Service Health
+### Step 5: Verify Service Health
 
 Check service liveness:
 

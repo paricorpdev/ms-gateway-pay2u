@@ -1,4 +1,4 @@
-.PHONY: help config deps swagger run-api run-worker build fmt vet lint lint-fix check-golangci test cover vuln check migrate-create migrate-up migrate-down check-migrate docker-up docker-down docker-build
+.PHONY: help config deps swagger run-api run-worker build fmt vet lint lint-fix check-golangci test cover vuln check migrate-create migrate-up migrate-down migrate-config-up migrate-config-down seed check-migrate docker-up docker-down docker-build
 
 APP_NAME = paygate
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -69,6 +69,15 @@ migrate-up: check-migrate ## Run all up migrations
 
 migrate-down: check-migrate ## Run all down migrations (rolls back all)
 	migrate -path db/migrations -database "$(DATABASE_URL)" down -all
+
+migrate-config-up: check-migrate ## Run pending migrations using config.yml
+	go run ./cmd/migrate up
+
+migrate-config-down: check-migrate ## Roll back the latest migration using config.yml
+	go run ./cmd/migrate down 1
+
+seed: ## Seed a demo merchant using config.yml
+	go run ./cmd/seed
 
 check-migrate:
 	@which migrate > /dev/null || (echo "migrate not installed, installing..." && go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest)

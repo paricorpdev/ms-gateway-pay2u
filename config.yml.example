@@ -102,3 +102,9 @@ worker:
     days: 30
     batch_size: 1000
 
+seed:
+  merchant:
+    code: "demo"
+    name: "Demo Merchant"
+    webhook_url: ""
+
