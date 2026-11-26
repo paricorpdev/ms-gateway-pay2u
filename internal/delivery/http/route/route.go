@@ -29,9 +29,10 @@ type RouteConfig struct {
 	MasterKeyMiddleware fiber.Handler
 	AuditWorker         *audit.AuditWorker
 
-	PaymentController  *controller.PaymentController
-	MerchantController *controller.MerchantController
-	HealthController   *controller.HealthController
+	PaymentController      *controller.PaymentController
+	DisbursementController *controller.DisbursementController
+	MerchantController     *controller.MerchantController
+	HealthController       *controller.HealthController
 }
 
 func (c *RouteConfig) Setup() {
@@ -110,6 +111,10 @@ func (c *RouteConfig) setupPublicRoutes() {
 		v1 := c.App.Group("/api/v1")
 		v1.Post("/payments/callback/:provider", c.PaymentController.HandleCallback)
 	}
+	if c.DisbursementController != nil {
+		v1 := c.App.Group("/api/v1")
+		v1.Post("/disbursements/callback/:provider", c.DisbursementController.HandleCallback)
+	}
 }
 
 func (c *RouteConfig) setupProtectedRoutes() {
@@ -123,6 +128,18 @@ func (c *RouteConfig) setupProtectedRoutes() {
 		payments.Post("/", c.PaymentController.CreatePayment)
 		payments.Get("/:merchant_reff", c.PaymentController.GetPayment)
 		payments.Post("/:merchant_reff/refresh", c.PaymentController.RefreshPayment)
+	}
+
+	if c.DisbursementController != nil {
+		var disbursementAuthHandlers []fiber.Handler
+		if c.APIKeyMiddleware != nil {
+			disbursementAuthHandlers = append(disbursementAuthHandlers, c.APIKeyMiddleware)
+		}
+
+		disbursements := c.App.Group("/api/v1/disbursements", disbursementAuthHandlers...)
+		disbursements.Post("/inquiry", c.DisbursementController.InquiryAccount)
+		disbursements.Post("/:merchant_reff/transfer", c.DisbursementController.TransferBank)
+		disbursements.Get("/:merchant_reff", c.DisbursementController.GetDisbursement)
 	}
 
 	if c.MerchantController != nil {

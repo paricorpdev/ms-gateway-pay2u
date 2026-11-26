@@ -25,7 +25,15 @@ type MerchantService interface {
 	ValidateAPIKey(ctx context.Context, apiKey string) (*entity.Merchant, error)
 }
 
+type DisbursementService interface {
+	InquiryAccount(ctx context.Context, req *payload.DisbursementInquiryRequest) (*payload.DisbursementResponse, error)
+	TransferBank(ctx context.Context, merchantRef string) (*payload.DisbursementResponse, error)
+	GetDisbursement(ctx context.Context, merchantRef string) (*payload.DisbursementResponse, error)
+	HandleTransferCallback(ctx context.Context, providerName string, rawBody []byte) error
+}
+
 var (
-	_ PaymentService  = (*PaymentUseCase)(nil)
-	_ MerchantService = (*MerchantUseCase)(nil)
+	_ PaymentService      = (*PaymentUseCase)(nil)
+	_ MerchantService     = (*MerchantUseCase)(nil)
+	_ DisbursementService = (*DisbursementUseCase)(nil)
 )

@@ -162,24 +162,26 @@ type RedisConfig struct {
 func (r RedisConfig) Redacted() string { return fmt.Sprintf("%s:%d/%d", r.Host, r.Port, r.Database) }
 
 type Pay2UConfig struct {
-	Sandbox           bool
-	BaseURLSandbox    string
-	BaseURLProduction string
-	OAuthURL          string
-	TokenURL          string
-	BillingVAURL      string
-	BillingQRISURL    string
-	BillingCCURL      string
-	BillingGetURL     string
-	ClientID          string
-	ClientSecret      string
-	MerchantCode      string
-	MerchantUser      string
-	MerchantPass      string
-	MerchantDomain    string
-	Timeout           time.Duration
-	OAuthTokenTTL     time.Duration
-	CallbackBaseURL   string
+	Sandbox                bool
+	BaseURLSandbox         string
+	BaseURLProduction      string
+	OAuthURL               string
+	TokenURL               string
+	BillingVAURL           string
+	BillingQRISURL         string
+	BillingCCURL           string
+	BillingGetURL          string
+	TransferBankInquiryURL string
+	TransferBankURL        string
+	ClientID               string
+	ClientSecret           string
+	MerchantCode           string
+	MerchantUser           string
+	MerchantPass           string
+	MerchantDomain         string
+	Timeout                time.Duration
+	OAuthTokenTTL          time.Duration
+	CallbackBaseURL        string
 }
 
 func (p Pay2UConfig) BaseURL() string {
@@ -251,6 +253,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("pay2u.billing_qris_url", "/service/core/trx/billing/qris/submit")
 	v.SetDefault("pay2u.billing_cc_url", "/service/core/trx/billing/cc/submit")
 	v.SetDefault("pay2u.billing_get_url", "/service/core/trx/billing/get")
+	v.SetDefault("pay2u.transfer_bank_inquiry_url", "/service/core/trx/transfer-bank/account-inquiry")
+	v.SetDefault("pay2u.transfer_bank_url", "/service/core/trx/transfer-bank/account-transfer")
 	v.SetDefault("pay2u.timeout", "30s")
 	v.SetDefault("pay2u.oauth_token_ttl", "50m")
 
@@ -331,24 +335,26 @@ func Load(v *viper.Viper) (*Config, error) {
 			},
 		},
 		Pay2U: Pay2UConfig{
-			Sandbox:           v.GetBool("pay2u.sandbox"),
-			BaseURLSandbox:    strings.TrimRight(v.GetString("pay2u.base_url_sandbox"), "/"),
-			BaseURLProduction: strings.TrimRight(v.GetString("pay2u.base_url_production"), "/"),
-			OAuthURL:          v.GetString("pay2u.oauth_url"),
-			TokenURL:          v.GetString("pay2u.token_url"),
-			BillingVAURL:      v.GetString("pay2u.billing_va_url"),
-			BillingQRISURL:    v.GetString("pay2u.billing_qris_url"),
-			BillingCCURL:      v.GetString("pay2u.billing_cc_url"),
-			BillingGetURL:     v.GetString("pay2u.billing_get_url"),
-			ClientID:          v.GetString("pay2u.client_id"),
-			ClientSecret:      v.GetString("pay2u.client_secret"),
-			MerchantCode:      v.GetString("pay2u.merchant_code"),
-			MerchantUser:      v.GetString("pay2u.merchant_user"),
-			MerchantPass:      v.GetString("pay2u.merchant_pass"),
-			MerchantDomain:    v.GetString("pay2u.merchant_domain"),
-			Timeout:           v.GetDuration("pay2u.timeout"),
-			OAuthTokenTTL:     v.GetDuration("pay2u.oauth_token_ttl"),
-			CallbackBaseURL:   strings.TrimRight(v.GetString("pay2u.callback_base_url"), "/"),
+			Sandbox:                v.GetBool("pay2u.sandbox"),
+			BaseURLSandbox:         strings.TrimRight(v.GetString("pay2u.base_url_sandbox"), "/"),
+			BaseURLProduction:      strings.TrimRight(v.GetString("pay2u.base_url_production"), "/"),
+			OAuthURL:               v.GetString("pay2u.oauth_url"),
+			TokenURL:               v.GetString("pay2u.token_url"),
+			BillingVAURL:           v.GetString("pay2u.billing_va_url"),
+			BillingQRISURL:         v.GetString("pay2u.billing_qris_url"),
+			BillingCCURL:           v.GetString("pay2u.billing_cc_url"),
+			BillingGetURL:          v.GetString("pay2u.billing_get_url"),
+			TransferBankInquiryURL: v.GetString("pay2u.transfer_bank_inquiry_url"),
+			TransferBankURL:        v.GetString("pay2u.transfer_bank_url"),
+			ClientID:               v.GetString("pay2u.client_id"),
+			ClientSecret:           v.GetString("pay2u.client_secret"),
+			MerchantCode:           v.GetString("pay2u.merchant_code"),
+			MerchantUser:           v.GetString("pay2u.merchant_user"),
+			MerchantPass:           v.GetString("pay2u.merchant_pass"),
+			MerchantDomain:         v.GetString("pay2u.merchant_domain"),
+			Timeout:                v.GetDuration("pay2u.timeout"),
+			OAuthTokenTTL:          v.GetDuration("pay2u.oauth_token_ttl"),
+			CallbackBaseURL:        strings.TrimRight(v.GetString("pay2u.callback_base_url"), "/"),
 		},
 		Worker: WorkerConfig{
 			Enabled:         v.GetBool("worker.enabled"),
@@ -426,6 +432,7 @@ func (c *Config) Validate() error {
 		require(c.Pay2U.MerchantCode, "pay2u.merchant_code")
 		require(c.Pay2U.MerchantUser, "pay2u.merchant_user")
 		require(c.Pay2U.MerchantPass, "pay2u.merchant_pass")
+		require(c.Pay2U.CallbackBaseURL, "pay2u.callback_base_url")
 	}
 
 	if len(problems) == 0 {

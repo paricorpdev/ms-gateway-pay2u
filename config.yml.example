@@ -72,8 +72,8 @@ api_key: "api-key-change-me"
 
 pay2u:
   sandbox: true
-  base_url_sandbox: "https://api.co.id"
-  base_url_production: "https:/api.co.id"
+  base_url_sandbox: "https://api-dev.pay2u.co.id"
+  base_url_production: "https://api.pay2u.co.id"
   oauth_url: "/security/auth/oauth/token"
   token_url: "/service/core/trx/token/create"
   billing_va_url: "/service/core/trx/billing/va/submit"

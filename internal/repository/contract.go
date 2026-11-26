@@ -48,6 +48,16 @@ type MerchantRepository interface {
 	Update(ctx context.Context, db *gorm.DB, id uuid.UUID, updates map[string]any) error
 }
 
+type DisbursementRepository interface {
+	Create(ctx context.Context, db *gorm.DB, disbursement *entity.Disbursement) error
+	FindByMerchantAndTransactionID(ctx context.Context, db *gorm.DB, merchantID, transactionID uuid.UUID) (*entity.Disbursement, error)
+	FindByMerchantAndRef(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, merchantRef string) (*entity.Disbursement, error)
+	FindByMerchantAndRefForUpdate(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, merchantRef string) (*entity.Disbursement, error)
+	FindByProviderTokenAndRef(ctx context.Context, db *gorm.DB, token, merchantRef string) (*entity.Disbursement, error)
+	FindByProviderTokenAndRefForUpdate(ctx context.Context, db *gorm.DB, token, merchantRef string) (*entity.Disbursement, error)
+	Update(ctx context.Context, db *gorm.DB, id uuid.UUID, updates map[string]any) error
+}
+
 type WebhookDispatchRepository interface {
 	CreateDispatch(ctx context.Context, db *gorm.DB, d *entity.WebhookDispatch) error
 	ClaimDispatch(ctx context.Context, db *gorm.DB, id uuid.UUID, workerID string, lockDuration time.Duration) (bool, error)
@@ -64,5 +74,6 @@ var (
 	_ CacheRepository           = (*redisRepository)(nil)
 	_ AuditLogRepository        = (*auditLogRepository)(nil)
 	_ MerchantRepository        = (*merchantRepository)(nil)
+	_ DisbursementRepository    = (*disbursementRepository)(nil)
 	_ WebhookDispatchRepository = (*webhookDispatchRepository)(nil)
 )

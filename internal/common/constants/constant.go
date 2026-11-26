@@ -38,10 +38,13 @@ const (
 )
 
 const (
-	WebhookEventPaymentSuccess = "payment.success"
-	WebhookEventPaymentFailed  = "payment.failed"
-	WebhookEventPaymentExpired = "payment.expired"
-	WebhookEventPaymentRefund  = "payment.refund"
+	WebhookEventPaymentSuccess       = "payment.success"
+	WebhookEventPaymentFailed        = "payment.failed"
+	WebhookEventPaymentExpired       = "payment.expired"
+	WebhookEventPaymentRefund        = "payment.refund"
+	WebhookEventDisbursementSuccess  = "disbursement.success"
+	WebhookEventDisbursementFailed   = "disbursement.failed"
+	WebhookEventDisbursementReversed = "disbursement.reversed"
 )
 
 const (
