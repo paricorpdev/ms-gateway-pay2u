@@ -141,16 +141,16 @@ func NewContainer(deps *Dependencies) *Container {
 
 func HTTP(deps *Dependencies, container *Container) {
 	routeConfig := route.RouteConfig{
-		App:                    deps.App,
-		Config:                 deps.Config,
-		Log:                    deps.Log,
-		PaymentController:      controller.NewPaymentController(container.Payment),
-		DisbursementController: controller.NewDisbursementController(container.Disbursement),
-		MerchantController:     controller.NewMerchantController(container.Merchant),
-		HealthController:       newHealthController(deps),
-		APIKeyMiddleware:       middleware.NewMerchantAPIKey(container.Merchant),
-		MasterKeyMiddleware:    middleware.NewMasterAPIKey(deps.Config.APIKey),
-		AuditWorker:            container.AuditWorker,
+		App:                        deps.App,
+		Config:                     deps.Config,
+		Log:                        deps.Log,
+		PaymentController:          controller.NewPaymentController(container.Payment),
+		DisbursementController:     controller.NewDisbursementController(container.Disbursement),
+		MerchantController:         controller.NewMerchantController(container.Merchant),
+		HealthController:           newHealthController(deps),
+		APIKeyMiddleware:           middleware.NewMerchantAPIKey(container.Merchant),
+		DashboardUserKeyMiddleware: middleware.NewDashboardUserKey(deps.DB),
+		AuditWorker:                container.AuditWorker,
 	}
 	routeConfig.Setup()
 }

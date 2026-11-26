@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"paygate/internal/entity"
+	"paygate/internal/model/payload"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -44,7 +45,7 @@ type MerchantRepository interface {
 	FindByID(ctx context.Context, db *gorm.DB, id uuid.UUID) (*entity.Merchant, error)
 	FindByAPIKey(ctx context.Context, db *gorm.DB, apiKey string) (*entity.Merchant, error)
 	FindByCode(ctx context.Context, db *gorm.DB, code string) (*entity.Merchant, error)
-	FindAll(ctx context.Context, db *gorm.DB, limit, offset int) ([]*entity.Merchant, int64, error)
+	FindAll(ctx context.Context, db *gorm.DB, request payload.MerchantListRequest) ([]*entity.Merchant, int64, error)
 	Update(ctx context.Context, db *gorm.DB, id uuid.UUID, updates map[string]any) error
 }
 

@@ -31,7 +31,12 @@ func NewAuditMiddleware(worker *audit.AuditWorker) fiber.Handler {
 
 		headers := make(map[string]string)
 		ctx.Request().Header.VisitAll(func(key, val []byte) {
-			headers[string(key)] = string(val)
+			name := string(key)
+			if strings.EqualFold(name, constants.HeaderAPIKey) {
+				headers[name] = "[REDACTED]"
+				return
+			}
+			headers[name] = string(val)
 		})
 		headersJSON, _ := json.Marshal(headers)
 

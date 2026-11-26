@@ -25,7 +25,6 @@ type Config struct {
 	Database DatabaseConfig
 	Pay2U    Pay2UConfig
 	Worker   WorkerConfig
-	APIKey   string
 }
 
 type WorkerConfig struct {
@@ -198,7 +197,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("app.shutdown_timeout", "15s")
 
 	v.SetDefault("web.host", "0.0.0.0")
-	v.SetDefault("web.port", 8080)
+	v.SetDefault("web.port", 8081)
 	v.SetDefault("web.prefork", false)
 	v.SetDefault("web.body_limit", 8*1024*1024)
 	v.SetDefault("web.read_timeout", "15s")
@@ -241,8 +240,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.redis.database", 0)
 	v.SetDefault("database.redis.tls", false)
 	v.SetDefault("database.redis.pool_size", 10)
-
-	v.SetDefault("api_key", "dev-api-key-change-me")
 
 	v.SetDefault("pay2u.sandbox", true)
 	v.SetDefault("pay2u.base_url_sandbox", "https://api-dev.pay2u.co.id")
@@ -370,7 +367,6 @@ func Load(v *viper.Viper) (*Config, error) {
 				BatchSize: v.GetInt("worker.retention.batch_size"),
 			},
 		},
-		APIKey: v.GetString("api_key"),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -426,7 +422,6 @@ func (c *Config) Validate() error {
 	require(c.Database.Redis.Host, "database.redis.host")
 
 	if c.App.IsProduction() {
-		require(c.APIKey, "api_key")
 		require(c.Pay2U.ClientID, "pay2u.client_id")
 		require(c.Pay2U.ClientSecret, "pay2u.client_secret")
 		require(c.Pay2U.MerchantCode, "pay2u.merchant_code")

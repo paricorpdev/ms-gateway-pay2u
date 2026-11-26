@@ -8,8 +8,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// EnvPrefix namespaces environment variable overrides: "api_key" is
-// overridden by APP_API_KEY.
+// EnvPrefix namespaces environment variable overrides.
 const EnvPrefix = "APP"
 
 // NewViper builds the raw configuration source.
