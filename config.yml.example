@@ -80,6 +80,8 @@ pay2u:
   billing_qris_url: "/service/core/trx/billing/qris/submit"
   billing_cc_url: "/service/core/trx/billing/cc/submit"
   billing_get_url: "/service/core/trx/billing/get"
+  transfer_bank_inquiry_url: "/service/core/trx/transfer-bank/account-inquiry"
+  transfer_bank_url: "/service/core/trx/transfer-bank/account-transfer"
   client_id: "client_id"
   client_secret: "client_secret"
   merchant_code: "merchant_code"
