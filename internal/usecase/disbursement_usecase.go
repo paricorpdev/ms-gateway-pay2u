@@ -480,24 +480,44 @@ func (u *DisbursementUseCase) HandleTransferCallback(ctx context.Context, provid
 	if providerName != "pay2u" || u.provider == nil {
 		return exception.BadRequest(fmt.Sprintf("unsupported disbursement provider: %s", providerName))
 	}
-	callback, err := u.provider.ParseTransferCallback(rawBody)
-	if err != nil {
-		return exception.BadRequest(fmt.Sprintf("parse account transfer callback: %v", err))
+	var identity struct {
+		Token        string `json:"token"`
+		MerchantReff string `json:"merchant_reff"`
+	}
+	if err := json.Unmarshal(rawBody, &identity); err != nil {
+		return exception.BadRequest(fmt.Sprintf("parse account transfer callback identity: %v", err))
+	}
+	if identity.Token == "" || identity.MerchantReff == "" {
+		return exception.BadRequest("account transfer callback is missing token or merchant_reff")
 	}
 
+	var callback *provider.BankTransferCallbackResult
 	var dispatch *entity.WebhookDispatch
-	err = u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		disbursement, err := u.disbursements.FindByProviderTokenAndRefForUpdate(ctx, tx, callback.Token, callback.MerchantReff)
+	err := u.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		disbursement, err := u.disbursements.FindByProviderTokenAndRefForUpdate(ctx, tx, identity.Token, identity.MerchantReff)
 		if err != nil {
 			return exception.Internal(fmt.Errorf("find callback disbursement: %w", err))
 		}
 		if disbursement == nil {
 			return exception.NotFound("disbursement for provider callback not found")
 		}
+		if disbursement.Status == constants.DisbursementStatusSuccess ||
+			disbursement.Status == constants.DisbursementStatusFailed ||
+			disbursement.Status == constants.DisbursementStatusCancelled {
+			return nil
+		}
+
+		callback, err = u.provider.ParseTransferCallback(rawBody)
+		if err != nil {
+			return exception.BadRequest(fmt.Sprintf("parse account transfer callback: %v", err))
+		}
 
 		newStatus, err := mapDisbursementCallbackStatus(callback.Status)
 		if err != nil {
 			return err
+		}
+		if disbursement.Status == newStatus {
+			return nil
 		}
 		if callback.ReceiverAccountNumber != "" && callback.ReceiverAccountNumber != disbursement.BeneficiaryAccountRef {
 			return exception.Conflict("provider callback receiver account does not match the inquiry")
@@ -534,32 +554,6 @@ func (u *DisbursementUseCase) HandleTransferCallback(ctx context.Context, provid
 		}
 		if newStatus == constants.DisbursementStatusSuccess && callback.AmountPaid != disbursement.AmountTotal {
 			return exception.Conflict("provider callback amount_paid does not match amount_total")
-		}
-		if disbursement.Status == newStatus {
-			updates := map[string]any{
-				"provider_callback": entity.JSONB(rawBody),
-				"updated_at":        time.Now().UTC(),
-			}
-			if callback.ReferenceNo != "" {
-				updates["provider_disbursement_ref"] = callback.ReferenceNo
-				disbursement.ProviderDisbursementRef = &callback.ReferenceNo
-			}
-			if callback.TransferDate != "" {
-				transferredAt := parseProviderTime(callback.TransferDate)
-				updates["transferred_at"] = transferredAt
-				disbursement.TransferredAt = &transferredAt
-			}
-			if err := u.disbursements.Update(ctx, tx, disbursement.ID, updates); err != nil {
-				return exception.Internal(fmt.Errorf("save duplicate provider callback: %w", err))
-			}
-			disbursement.ProviderCallback = entity.JSONB(rawBody)
-			return nil
-		}
-		if disbursement.Status == constants.DisbursementStatusCancelled || disbursement.Status == constants.DisbursementStatusFailed {
-			return nil
-		}
-		if disbursement.Status == constants.DisbursementStatusSuccess && newStatus != constants.DisbursementStatusCancelled {
-			return nil
 		}
 
 		updates := map[string]any{

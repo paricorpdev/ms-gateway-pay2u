@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"mime"
 	"strconv"
 	"strings"
 
@@ -113,6 +114,11 @@ func (c *DisbursementController) GetAdmin(ctx *fiber.Ctx) error {
 }
 
 func (c *DisbursementController) HandleCallback(ctx *fiber.Ctx) error {
+	contentType, _, err := mime.ParseMediaType(ctx.Get(fiber.HeaderContentType))
+	if err != nil || !strings.EqualFold(contentType, "application/json") {
+		return exception.UnsupportedMedia("content-type must be application/json")
+	}
+
 	if err := c.disbursementUC.HandleTransferCallback(ctx.UserContext(), ctx.Params("provider"), ctx.Body()); err != nil {
 		return err
 	}
