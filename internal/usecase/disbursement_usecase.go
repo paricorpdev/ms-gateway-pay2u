@@ -519,43 +519,6 @@ func (u *DisbursementUseCase) HandleTransferCallback(ctx context.Context, provid
 		if disbursement.Status == newStatus {
 			return nil
 		}
-		if callback.ReceiverAccountNumber != "" && callback.ReceiverAccountNumber != disbursement.BeneficiaryAccountRef {
-			return exception.Conflict("provider callback receiver account does not match the inquiry")
-		}
-		if callback.ReceiverBank != "" && callback.ReceiverBank != disbursement.BeneficiaryBankCode {
-			return exception.Conflict("provider callback receiver bank does not match the inquiry")
-		}
-		if callback.ReceiverName != "" && callback.ReceiverName != disbursement.BeneficiaryName {
-			return exception.Conflict("provider callback receiver name does not match the inquiry")
-		}
-		if callback.ChannelCode != "" && callback.ChannelCode != disbursement.ChannelCode {
-			return exception.Conflict("provider callback channel_code does not match the inquiry")
-		}
-		if callback.ReceiverBankName != "" && callback.ReceiverBankName != disbursement.BeneficiaryBankName {
-			return exception.Conflict("provider callback receiver bank name does not match the inquiry")
-		}
-		if callback.Amount != nil && *callback.Amount != disbursement.Amount {
-			return exception.Conflict("provider callback amount does not match the inquiry")
-		}
-		if callback.AmountAdmin != nil && *callback.AmountAdmin != disbursement.AmountAdmin {
-			return exception.Conflict("provider callback amount_admin does not match the inquiry")
-		}
-		if callback.AmountDiscount != nil && *callback.AmountDiscount != disbursement.AmountDiscount {
-			return exception.Conflict("provider callback amount_discount does not match the inquiry")
-		}
-		if callback.AmountTotal != nil && *callback.AmountTotal != disbursement.AmountTotal {
-			return exception.Conflict("provider callback amount_total does not match the inquiry")
-		}
-		if callback.Note != "" && callback.Note != disbursement.Note {
-			return exception.Conflict("provider callback note does not match the inquiry")
-		}
-		if callback.ExpiredMinutes != nil && *callback.ExpiredMinutes != disbursement.ExpiredMinutes {
-			return exception.Conflict("provider callback expired_minutes does not match the inquiry")
-		}
-		if newStatus == constants.DisbursementStatusSuccess && callback.AmountPaid != disbursement.AmountTotal {
-			return exception.Conflict("provider callback amount_paid does not match amount_total")
-		}
-
 		updates := map[string]any{
 			"status":            newStatus,
 			"provider_callback": entity.JSONB(rawBody),

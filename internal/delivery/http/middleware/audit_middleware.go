@@ -90,7 +90,11 @@ func NewAuditMiddleware(worker *audit.AuditWorker) fiber.Handler {
 			CreatedAt:       time.Now().UTC(),
 		}
 
-		worker.RecordInbound(inbound)
+		if strings.Contains(path, "/callback/") {
+			worker.RecordInboundSync(inbound)
+		} else {
+			worker.RecordInbound(inbound)
+		}
 
 		return err
 	}

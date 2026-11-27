@@ -72,6 +72,12 @@ func (w *AuditWorker) RecordInbound(entry *entity.InboundRequest) {
 	}
 }
 
+func (w *AuditWorker) RecordInboundSync(entry *entity.InboundRequest) {
+	if err := w.repo.SaveInbound(context.Background(), entry); err != nil {
+		w.log.WithError(err).Error("failed to save inbound audit log")
+	}
+}
+
 func (w *AuditWorker) RecordOutbound(entry *entity.OutboundRequest) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
