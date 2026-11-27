@@ -30,6 +30,8 @@ type DisbursementService interface {
 	InquiryAccount(ctx context.Context, req *payload.DisbursementInquiryRequest) (*payload.DisbursementResponse, error)
 	TransferBank(ctx context.Context, merchantRef string) (*payload.DisbursementResponse, error)
 	GetDisbursement(ctx context.Context, merchantRef string) (*payload.DisbursementResponse, error)
+	ListAdminDisbursements(ctx context.Context, request payload.AdminDisbursementListRequest) (*payload.PageResponse[payload.AdminDisbursementResponse], error)
+	GetAdminDisbursement(ctx context.Context, id uuid.UUID, adminID *uuid.UUID) (*payload.AdminDisbursementDetailResponse, error)
 	HandleTransferCallback(ctx context.Context, providerName string, rawBody []byte) error
 }
 

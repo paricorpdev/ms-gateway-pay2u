@@ -56,6 +56,8 @@ type DisbursementRepository interface {
 	FindByMerchantAndRefForUpdate(ctx context.Context, db *gorm.DB, merchantID uuid.UUID, merchantRef string) (*entity.Disbursement, error)
 	FindByProviderTokenAndRef(ctx context.Context, db *gorm.DB, token, merchantRef string) (*entity.Disbursement, error)
 	FindByProviderTokenAndRefForUpdate(ctx context.Context, db *gorm.DB, token, merchantRef string) (*entity.Disbursement, error)
+	ListAdmin(ctx context.Context, db *gorm.DB, request payload.AdminDisbursementListRequest, merchantID *uuid.UUID, start, end *time.Time) ([]entity.Disbursement, int64, error)
+	FindAdminByID(ctx context.Context, db *gorm.DB, id uuid.UUID, adminID *uuid.UUID) (*entity.Disbursement, error)
 	Update(ctx context.Context, db *gorm.DB, id uuid.UUID, updates map[string]any) error
 }
 

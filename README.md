@@ -300,6 +300,16 @@ No body is required. The gateway submits the saved inquiry details once and retu
 
 Returns the latest disbursement status and provider reference number when available.
 
+### 4. Dashboard disbursement monitoring
+
+The Dashboard uses the signed-in user's `X-API-Key` with these read-only endpoints. Admins see disbursements for their own merchants; Super Admins can see all merchants. The list omits beneficiary account numbers, while the detail response includes the account number.
+
+`GET /api/v1/admin/disbursements/?page=1&per_page=10&search=recipient&status=SUCCESS&month=11&year=2026&merchant_id={merchant_id}`
+
+Supported statuses are `WAITING_SETTLEMENT`, `PROCESSING`, `SUCCESS`, `FAILED`, and `CANCELLED`. `month` must be supplied with `year`; `year` alone returns all months in that year. Search matches request and merchant references, beneficiary name/account, bank name, and provider reference.
+
+`GET /api/v1/admin/disbursements/{id}` returns the full dashboard detail for one disbursement UUID.
+
 ### Pay2U transfer callback
 
 Pay2U calls `POST /api/v1/disbursements/callback/pay2u`. The gateway validates the token/reference pair and checks callback details such as channel, beneficiary, and any supplied amount fields against the saved inquiry. For success notifications, it also checks `amount_paid` against the saved `amount_total`. It stores the callback payload and updates the status, transfer date, and provider reference, then sends the final notification to the merchant's configured `webhook_url`, with `X-Paygate-Signature` when the merchant has a webhook secret.

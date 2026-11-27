@@ -124,6 +124,7 @@ func NewContainer(deps *Dependencies) *Container {
 		pay2uProvider,
 		dispatchRepo,
 		dispatcher,
+		deps.Config.App.Timezone,
 	)
 
 	return &Container{

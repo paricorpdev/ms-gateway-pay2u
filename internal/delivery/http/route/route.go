@@ -140,6 +140,10 @@ func (c *RouteConfig) setupProtectedRoutes() {
 		disbursements.Post("/inquiry", c.DisbursementController.InquiryAccount)
 		disbursements.Post("/:merchant_reff/transfer", c.DisbursementController.TransferBank)
 		disbursements.Get("/:merchant_reff", c.DisbursementController.GetDisbursement)
+
+		adminDisbursements := c.App.Group("/api/v1/admin/disbursements", c.DashboardUserKeyMiddleware)
+		adminDisbursements.Get("/", c.DisbursementController.ListAdmin)
+		adminDisbursements.Get("/:id", c.DisbursementController.GetAdmin)
 	}
 
 	if c.MerchantController != nil {

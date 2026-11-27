@@ -30,6 +30,7 @@ type DisbursementUseCase struct {
 	provider      provider.DisbursementProvider
 	dispatches    repository.WebhookDispatchRepository
 	dispatcher    webhook.Dispatcher
+	timeLocation  *time.Location
 }
 
 func NewDisbursementUseCase(
@@ -40,7 +41,12 @@ func NewDisbursementUseCase(
 	disbursementProvider provider.DisbursementProvider,
 	dispatches repository.WebhookDispatchRepository,
 	dispatcher webhook.Dispatcher,
+	timeZone string,
 ) *DisbursementUseCase {
+	timeLocation, err := time.LoadLocation(timeZone)
+	if err != nil {
+		timeLocation = time.UTC
+	}
 	return &DisbursementUseCase{
 		db:            db,
 		disbursements: disbursements,
@@ -49,6 +55,7 @@ func NewDisbursementUseCase(
 		provider:      disbursementProvider,
 		dispatches:    dispatches,
 		dispatcher:    dispatcher,
+		timeLocation:  timeLocation,
 	}
 }
 
@@ -358,6 +365,115 @@ func (u *DisbursementUseCase) GetDisbursement(ctx context.Context, merchantRef s
 		return nil, exception.NotFound("disbursement not found")
 	}
 	return disbursementResponse(disbursement), nil
+}
+
+func (u *DisbursementUseCase) ListAdminDisbursements(ctx context.Context, request payload.AdminDisbursementListRequest) (*payload.PageResponse[payload.AdminDisbursementResponse], error) {
+	if request.Page < 1 {
+		request.Page = payload.DefaultPage
+	}
+	if request.PerPage < 1 {
+		request.PerPage = payload.DefaultPerPage
+	}
+	if request.PerPage > payload.MaxPerPage {
+		request.PerPage = payload.MaxPerPage
+	}
+	request.Status = strings.ToUpper(strings.TrimSpace(request.Status))
+	switch request.Status {
+	case "", constants.DisbursementStatusWaitingSettlement, constants.DisbursementStatusProcessing,
+		constants.DisbursementStatusSuccess, constants.DisbursementStatusFailed, constants.DisbursementStatusCancelled:
+	default:
+		return nil, exception.BadRequest("invalid disbursement status")
+	}
+
+	if request.Month != 0 && (request.Month < 1 || request.Month > 12 || request.Year == 0) {
+		return nil, exception.BadRequest("month requires a valid year and must be between 1 and 12")
+	}
+	if request.Year != 0 && (request.Year < 2000 || request.Year > 2100) {
+		return nil, exception.BadRequest("year must be between 2000 and 2100")
+	}
+	var merchantID *uuid.UUID
+	if request.MerchantID != "" {
+		parsedMerchantID, err := uuid.Parse(request.MerchantID)
+		if err != nil {
+			return nil, exception.BadRequest("merchant_id must be a UUID")
+		}
+		merchantID = &parsedMerchantID
+	}
+
+	var start, end *time.Time
+	if request.Year != 0 {
+		month := request.Month
+		endMonth := month
+		if month == 0 {
+			month = 1
+			endMonth = 12
+		}
+		startDate := time.Date(request.Year, time.Month(month), 1, 0, 0, 0, 0, u.timeLocation)
+		endDate := time.Date(request.Year, time.Month(endMonth), 1, 0, 0, 0, 0, u.timeLocation).AddDate(0, 1, 0)
+		start, end = &startDate, &endDate
+	}
+
+	rows, total, err := u.disbursements.ListAdmin(ctx, u.db, request, merchantID, start, end)
+	if err != nil {
+		return nil, exception.Internal(fmt.Errorf("list admin disbursements: %w", err))
+	}
+	data := make([]payload.AdminDisbursementResponse, 0, len(rows))
+	for i := range rows {
+		data = append(data, adminDisbursementResponse(&rows[i]))
+	}
+	return payload.NewPageResponse(data, request.Page, request.PerPage, total), nil
+}
+
+func (u *DisbursementUseCase) GetAdminDisbursement(ctx context.Context, id uuid.UUID, adminID *uuid.UUID) (*payload.AdminDisbursementDetailResponse, error) {
+	row, err := u.disbursements.FindAdminByID(ctx, u.db, id, adminID)
+	if err != nil {
+		return nil, exception.Internal(fmt.Errorf("get admin disbursement: %w", err))
+	}
+	if row == nil {
+		return nil, exception.NotFound("disbursement not found")
+	}
+	return &payload.AdminDisbursementDetailResponse{
+		AdminDisbursementResponse: adminDisbursementResponse(row),
+		BeneficiaryAccountNumber:  row.BeneficiaryAccountRef,
+	}, nil
+}
+
+func adminDisbursementResponse(row *entity.Disbursement) payload.AdminDisbursementResponse {
+	response := payload.AdminDisbursementResponse{
+		ID:                      row.ID,
+		TransactionID:           row.TransactionID,
+		RequestID:               row.RequestID,
+		MerchantRef:             row.MerchantRef,
+		Provider:                row.Provider,
+		ProviderDisbursementRef: row.ProviderDisbursementRef,
+		ChannelCode:             row.ChannelCode,
+		Amount:                  row.Amount,
+		AmountAdmin:             row.AmountAdmin,
+		AmountDiscount:          row.AmountDiscount,
+		AmountTotal:             row.AmountTotal,
+		Currency:                row.Currency,
+		BeneficiaryName:         row.BeneficiaryName,
+		BeneficiaryBankCode:     row.BeneficiaryBankCode,
+		BeneficiaryBankName:     row.BeneficiaryBankName,
+		Note:                    row.Note,
+		Status:                  row.Status,
+		EligibleAt:              row.EligibleAt,
+		InquiryAt:               row.InquiryAt,
+		TransferredAt:           row.TransferredAt,
+		Attempts:                row.Attempts,
+		MaxAttempts:             row.MaxAttempts,
+		PaidAt:                  row.PaidAt,
+		CreatedAt:               row.CreatedAt,
+		UpdatedAt:               row.UpdatedAt,
+	}
+	if row.Merchant != nil {
+		response.Merchant = &payload.AdminMerchantSummary{
+			ID:   row.Merchant.ID,
+			Code: row.Merchant.Code,
+			Name: row.Merchant.Name,
+		}
+	}
+	return response
 }
 
 func (u *DisbursementUseCase) HandleTransferCallback(ctx context.Context, providerName string, rawBody []byte) error {
